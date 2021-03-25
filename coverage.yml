@@ -7,7 +7,7 @@
   __coverage_t : &__coverage_t
     _conf : single_core
     _constr_grps  : &__coverage_t__constr_grps
-      - constraints_coverage.constr_coverage_default=1
+      - constraints_coverage.global=1
     _when : &__coverage_t__when 
       - quick
       - nightly

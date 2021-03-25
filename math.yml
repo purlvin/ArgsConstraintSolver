@@ -7,7 +7,7 @@
   __math_t : &__math_t
     _conf : single_core
     _constr_grps  : &__math_t__constr_grps
-      - constraints_math.constr_math_default=1
+      - constraints_math.global=1
     _when : &__math_t__when 
       - quick
       - nightly
@@ -19,7 +19,7 @@
     <<: *__math_t
     _constr_grps : &__conv_t__constr_grps
       - *__math_t__constr_grps
-      - constraints_math.constr_math_conv=1
+      - constraints_math.conv=1
     _when  : &__conv_t__when
       [*__math_t__when, conv]
     Description : "Template for math convolution tests."
@@ -34,7 +34,7 @@
       "- basic 4-packer test"
     _constr_grps : 
       - *__conv_t__constr_grps
-      - constraints_math.constr_math_conv_basic=1
+      - constraints_math.conv_basic=1
   
   conv_multi_section:
     <<: *__conv_t
@@ -42,6 +42,6 @@
       "- bfp8 neginf mask multi-section"
     _constr_grps : 
       - *__conv_t__constr_grps
-      - constraints_math.constr_math_conv_multi_section=1
+      - constraints_math.conv_multi_section=1
       - default=0
 # }!Testcases

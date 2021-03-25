@@ -4,6 +4,7 @@ import math
 import re
 import random
 import sys
+import os
 
 def get_tests(yml):
     spec = {}
@@ -31,16 +32,6 @@ def get_tests(yml):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
     return tests
-
-def gen_test_list(tests):
-    f = open(sv, "w")
-    # include
-    for inc in constrains["files"]:
-        f.write('`include "{0}"\n'.format(inc))
-    # program
-    f.write('\nprogram constraints_solver;\n')
-    for c in constrains["classes"]:
-        f.write('  {0:25} {1:>25}_inst = new();\n'.format(c, c))
 
 def get_constraints(yml):
     constraints = {"files": [], "classes": {}}
@@ -118,7 +109,7 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('      default: begin\n'.format(t))
     f.write('        $display("[constraints_solver] ERROR: No test is matched, all constraint groups are disalbed by default!");\n'.format(g))
     f.write('      end\n')
-    f.write('    end\n')
+    f.write('    endcase\n')
     f.write('  endtask\n')
 
     f.write('\n  //===========================================\n')
@@ -132,18 +123,18 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('\n  //===========================================\n')
     f.write('  // Function: GenArgs\n')
     f.write('  task GenArgs();\n')
-    f.write('    string arg_list, arg;\n')
+    f.write('    string args_list, args;\n')
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
         for v in constrains["classes"][c]["vars"]:
-            f.write('    $sformat(arg, "--{1}=%d", {0}_inst.{1});\n'.format(c, v))
-            f.write('    arg_list += arg;\n')
-    f.write('  $display("ARGS: %s", arg_list);\n')
+            f.write('    $sformat(args, "--{1}=%d", {0}_inst.{1});\n'.format(c, v))
+            f.write('    args_list = {args_list, " ", args};\n')
+    f.write('  $display("ARGS: %s", args_list);\n')
     f.write('  endtask\n')
 
     f.write('\n  initial begin\n')
     #   Get test argument
-    f.write('    string testname = "UNKNOWN"\n')
+    f.write('    string testname = "UNKNOWN";\n')
     f.write('    $value$plusargs("test=%s", testname);\n')
     f.write('    $display("[constraints_solver] Runtime args: test = %s", testname);\n')
 
@@ -178,16 +169,25 @@ if __name__ == "__main__":
     seed = 6666
     random.seed(seed)
     seed = random.getrandbits(32)
-    print('\nSeed: ', seed)
+    print('\nSTEP 0: Seed: ', seed)
 
     # Constraints
     yml = "test.yml"
     tests       = get_tests(yml)
     constraints = get_constraints(yml)
-    print("\nTests: \n", tests)
-    print("\nConstrains: \n", constraints)
+    #print("\nTests: \n", tests)
+    #print("\nConstrains: \n", constraints)
 
-    sv = "constraints_solver.sv"
+    print('\nSTEP 1: Generate constraints_solver.sv')
+    cmd = "mkdir -p out"
+    ret = os.system(cmd)
+    sv = "out/constraints_solver.sv"
     gen_solver_sv(sv, tests, constraints)
 
-    # gen_solver_sv(constraints, constraints_cfg)
+    print('\nSTEP 2: VCS compile')
+    cmd = "vcs out/constraints_solver.sv -sverilog -o out/args_constraint_simv -l out/args_constraint_simv_comp.log"
+    ret = os.system(cmd)
+
+    print('\nSTEP 3: VCS run')
+    cmd = "./out/args_constraint_simv +ntb_random_seed=10 +test=conv_basic"
+    ret = os.system(cmd)
