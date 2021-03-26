@@ -75,8 +75,8 @@ def get_constraints(yml):
                 father["constrs"] = list(set(father["constrs"]) | set(constr_class[class_name]["constrs"]))
                 return father
         if (constr_class[class_name]["father"]): 
-            constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
-            constr_class[class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]       
+            #constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
+            constr_class[class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]
     constraints["classes"] = constr_class
     return constraints
 
@@ -179,7 +179,7 @@ if __name__ == "__main__":
     #print("\nConstrains: \n", constraints)
 
     print('\nSTEP 1: Generate constraints_solver.sv')
-    cmd = "mkdir -p out"
+    cmd = "mkdir out"
     ret = os.system(cmd)
     sv = "out/constraints_solver.sv"
     gen_solver_sv(sv, tests, constraints)
