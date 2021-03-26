@@ -67,13 +67,16 @@ def get_constraints(yml):
     for class_name in constr_class:
         def recesive_get_vars(class_name):
             if (not constr_class[class_name]["father"]):
-                return constr_class[class_name]["vars"]
+                return constr_class[class_name].copy()
             else:
-                father_vars = recesive_get_vars(constr_class[class_name]["father"])
+                father = recesive_get_vars(constr_class[class_name]["father"])
                 for k in constr_class[class_name]["vars"]:
-                    father_vars[k] = constr_class[class_name]["vars"][k]
-                return father_vars
-        if (constr_class[class_name]["father"]): constr_class[class_name]["vars"] = recesive_get_vars(class_name)       
+                    father["vars"][k] = constr_class[class_name]["vars"][k]
+                father["constrs"] = list(set(father["constrs"]) | set(constr_class[class_name]["constrs"]))
+                return father
+        if (constr_class[class_name]["father"]): 
+            constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
+            constr_class[class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]       
     constraints["classes"] = constr_class
     return constraints
 
@@ -127,7 +130,7 @@ def gen_solver_sv(sv, tests, constrains):
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
         for v in constrains["classes"][c]["vars"]:
-            f.write('    $sformat(args, "--{1}=%d", {0}_inst.{1});\n'.format(c, v))
+            f.write('    $sformat(args, "--{1}=%-0d", {0}_inst.{1});\n'.format(c, v))
             f.write('    args_list = {args_list, " ", args};\n')
     f.write('  $display("ARGS: %s", args_list);\n')
     f.write('  endtask\n')
@@ -159,17 +162,14 @@ def gen_solver_sv(sv, tests, constrains):
 
 
 if __name__ == "__main__":
-    # filename = "tmp_reg.txt"
-    # filename = sys.argv[1]
-    # regs, headerStr = read_reg_text(filename)
-    # print_rdl(regs, headerStr)
-    # print("hello!")
-
-    # Seed
-    seed = 6666
-    random.seed(seed)
-    seed = random.getrandbits(32)
-    print('\nSTEP 0: Seed: ', seed)
+    USAGE = "Wrong argument number!\n  USAGE:  {0} <TEST_CASE|WHEN> [SEED]".format(sys.argv[0])
+    if (len(sys.argv) < 2):
+        raise ValueError(USAGE)
+    test = sys.argv[1]
+    if (len(sys.argv) > 2):
+        seed = sys.argv[1]
+        random.seed(seed)
+        print('\nSTEP 0: Set Seed: ', seed)
 
     # Constraints
     yml = "test.yml"
@@ -186,8 +186,11 @@ if __name__ == "__main__":
 
     print('\nSTEP 2: VCS compile')
     cmd = "vcs out/constraints_solver.sv -sverilog -o out/args_constraint_simv -l out/args_constraint_simv_comp.log"
+    print(cmd)
     ret = os.system(cmd)
 
     print('\nSTEP 3: VCS run')
-    cmd = "./out/args_constraint_simv +ntb_random_seed=10 +test=conv_basic"
+    seed = random.getrandbits(32)
+    cmd = "./out/args_constraint_simv +ntb_random_seed={} +test={}".format(seed, test)
+    print(cmd)
     ret = os.system(cmd)

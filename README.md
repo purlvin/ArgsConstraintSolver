@@ -1,4 +1,9 @@
 # ArgsConstraintSolver
 
-VCS test command:
-vcs constraints_solver.sv -sverilog -o out/conf_constraint_simv -l out/conf_constraint_simv_comp.log && ./out/conf_constraint_simv +ntb_random_seed=10 +test=conv_basic
+USAGE:  
+  ./args_constraint_solver.py <TEST_CASE|WHEN> [SEED]
+
+Examples:
+  ./args_constraint_solver.py conv_basic
+  ./args_constraint_solver.py conv_basic 100
+
