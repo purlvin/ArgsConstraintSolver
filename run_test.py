@@ -33,8 +33,9 @@ def get_tests(yml):
     return tests
 
 
-
 if __name__ == "__main__":
+    outdir = os.path.join(os.getcwd(), "out")
+    
     # Construct the argument parser
     ap = argparse.ArgumentParser()
     ap.add_argument("test", nargs='?', help="Test name")
@@ -45,11 +46,10 @@ if __name__ == "__main__":
     for k,v in args.items():
         if (v): print("  {} : {}".format(k, v))
     
-    #USAGE = "Wrong argument number!\n  USAGE:  {0} <TEST_CASE|WHEN> [SEED]".format(sys.argv[0])
-    #raise ValueError(USAGE)
-    
     # Seed
-    if (args["seed"]): random.seed(args["seed"])
+    seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]
+    random.seed(args["seed"])
+    print("> Seed: " + str(seed))
     
     # Test list
     test_list = {}
@@ -68,8 +68,7 @@ if __name__ == "__main__":
     print("> Found tests: \n  " + str(sorted(test_list.keys())))
   
     # Gen constrints_solver.sv
-    print('\nSTEP 1: Gen constrints_solver.sv')
-    outdir = os.path.join(os.getcwd(), "out")
+    print('\nSTEP 1: Gen {}/constrints_solver.sv'.format(outdir))
     os.makedirs(outdir, exist_ok=True)
     sv = os.path.join(outdir, "constraints_solver.sv")
     args_constraint_solver.GenConstrintsSolver(sv)
@@ -80,22 +79,13 @@ if __name__ == "__main__":
     print(cmd)
     ret = os.system(cmd)
     
-#    owd = os.getcwd()
-#    os.chdir(rundir)
-#    print('\nSTEP 2: VCS run')
-#    cmd = "{}/args_constraint_simv +ntb_random_seed={} +test={}".format(outdir, seed, test)
-#    print(cmd)
-#    ret = os.system(cmd)
-#    os.chdir(owd)
-    
     # VCS run
     for rundir,test in sorted(test_list.items()):
-        print('STEP 3: VCS run test: {}'.format(rundir))
+        print('\nSTEP 3: VCS run test: {}'.format(rundir))
         seed = random.getrandbits(32)
         rundir = os.path.join(outdir, rundir)
         os.makedirs(rundir, exist_ok=True)
         os.chdir(rundir)
         cmd = "{}/args_constraint_simv +ntb_random_seed={} +test={}".format(outdir, seed, test)
         ret = os.system(cmd)
-
 
