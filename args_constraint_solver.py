@@ -2,7 +2,6 @@
 import yaml
 import math
 import re
-import random
 import sys
 import os
 
@@ -26,8 +25,7 @@ def get_tests(yml):
             cfg = [i.strip() for i in constr_grp.split("=")]
             (len(cfg) == 1) and cfg.append(1)
             if (test not in tests["cases"]): tests["cases"][test] = []
-            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0].replace('.', '_inst.')
-)
+            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0].replace('.', '_inst.'))
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
@@ -80,20 +78,19 @@ def get_constraints(yml):
     constraints["classes"] = constr_class
     return constraints
 
-
 def gen_solver_sv(sv, tests, constrains):
     f = open(sv, "w")
     # include
     for inc in constrains["files"]:
         f.write('`include "{0}"\n'.format(inc))
     # program
-    f.write('\nprogram constraints_solver;\n')
+    f.write('\nmodule ttx_generator;\n')
     for c in constrains["classes"]:
         f.write('  {0:25} {1:>25}_inst = new();\n'.format(c, c))
     
     f.write('\n  //===========================================\n')
     f.write('  // Function: ConfigConstrGrps\n')
-    f.write('  task ConfigConstrGrps(input string testname);\n')
+    f.write('  function ConfigConstrGrps(input string testname);\n')
     #   Disable all constraints by default
     f.write('    // Disable all constraints by default\n')
     for c in constrains["classes"]:
@@ -113,29 +110,37 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('        $display("[constraints_solver] ERROR: No test is matched, all constraint groups are disalbed by default!");\n'.format(g))
     f.write('      end\n')
     f.write('    endcase\n')
-    f.write('  endtask\n')
+    f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
     f.write('  // Function: RandomizeConstrs\n')
-    f.write('  task RandomizeConstrs();\n')
+    f.write('  function RandomizeConstrs();\n')
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
         f.write('    {0}_inst.randomize();\n'.format(c))
-    f.write('  endtask\n')
+    f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
     f.write('  // Function: GenArgs\n')
-    f.write('  task GenArgs();\n')
-    f.write('    string args_list, args;\n')
+    f.write('  function GenArgs();\n')
+    f.write('    int fd;\n')
+    f.write('    string args, cmd;\n')
+    f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
         for v in constrains["classes"][c]["vars"]:
             f.write('    $sformat(args, "--{1}=%-0d", {0}_inst.{1});\n'.format(c, v))
-            f.write('    args_list = {args_list, " ", args};\n')
-    f.write('  $display("ARGS: %s", args_list);\n')
-    f.write('  endtask\n')
+            f.write('    cmd = {cmd, " ", args};\n')
+            f.write('    $fdisplay(fd, "%s", args);\n')
+    f.write('    $fclose(fd);\n')
+    f.write('    cmd = {"echo run TTX_GENERATOR ", cmd};\n')
+    f.write('    $display("CMD: %s", cmd);\n')
+    f.write('    $system(cmd);\n')
+    f.write('  endfunction\n')
 
-    f.write('\n  initial begin\n')
+    f.write('\n  //===========================================\n')
+    f.write('  // Task: GenImage\n')
+    f.write('  task GenImage();\n')
     #   Get test argument
     f.write('    string testname = "UNKNOWN";\n')
     f.write('    $value$plusargs("test=%s", testname);\n')
@@ -155,42 +160,16 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('\n    //--------------------------------------------\n')
     f.write('    // Generate arguments\n')
     f.write('    GenArgs();\n')
-    
-    f.write('\n  end\n')
-    f.write('endprogram\n')
+    f.write('  endtask\n')
+    f.write('endmodule\n')
     f.close()
 
-
-if __name__ == "__main__":
-    USAGE = "Wrong argument number!\n  USAGE:  {0} <TEST_CASE|WHEN> [SEED]".format(sys.argv[0])
-    if (len(sys.argv) < 2):
-        raise ValueError(USAGE)
-    test = sys.argv[1]
-    if (len(sys.argv) > 2):
-        seed = sys.argv[1]
-        random.seed(seed)
-        print('\nSTEP 0: Set Seed: ', seed)
-
+def GenConstrintsSolver(sv):
     # Constraints
     yml = "test.yml"
     tests       = get_tests(yml)
     constraints = get_constraints(yml)
     #print("\nTests: \n", tests)
     #print("\nConstrains: \n", constraints)
-
-    print('\nSTEP 1: Generate constraints_solver.sv')
-    cmd = "mkdir out"
-    ret = os.system(cmd)
-    sv = "out/constraints_solver.sv"
     gen_solver_sv(sv, tests, constraints)
 
-    print('\nSTEP 2: VCS compile')
-    cmd = "vcs out/constraints_solver.sv -sverilog -o out/args_constraint_simv -l out/args_constraint_simv_comp.log"
-    print(cmd)
-    ret = os.system(cmd)
-
-    print('\nSTEP 3: VCS run')
-    seed = random.getrandbits(32)
-    cmd = "./out/args_constraint_simv +ntb_random_seed={} +test={}".format(seed, test)
-    print(cmd)
-    ret = os.system(cmd)

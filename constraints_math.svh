@@ -35,10 +35,3 @@ class constraints_math;
   endfunction
 endclass
 
-class constraints_soc_math extends constraints_math;
-  constraint soc_math {
-    dbg_ovrd      inside {[50:51]};
-    num_sections  == 'h1;
-    norelu        == 'h1;
-  }
-endclass

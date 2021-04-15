@@ -32,6 +32,7 @@
     <<: *__conv_t
     Description : |-
       "- basic 4-packer test"
+    _clones : 3
     _constr_grps : 
       - *__conv_t__constr_grps
       - constraints_math.conv_basic=1
@@ -40,6 +41,7 @@
     <<: *__conv_t
     Description : |-
       "- bfp8 neginf mask multi-section"
+    _clones : 5
     _constr_grps : 
       - *__conv_t__constr_grps
       - constraints_math.conv_multi_section=1
