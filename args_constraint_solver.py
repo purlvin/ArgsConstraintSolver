@@ -10,6 +10,7 @@ def get_tests(yml):
     # Load all .yml
     cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
     for inc in cfg.get("testsuites", []):
+        inc = os.path.join(os.path.dirname(yml),inc)
         spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
 
     # Load constraint groups per test
@@ -37,6 +38,7 @@ def get_constraints(yml):
     constr_class = {}
     cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
     for inc in cfg.get("constraints", []):
+        inc = os.path.join(os.path.dirname(yml),inc)
         constraints["files"].append(inc)
         class_name = None
         constr_name = None
@@ -164,9 +166,8 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('endmodule\n')
     f.close()
 
-def GenConstrintsSolver(sv):
+def GenConstrintsSolver(yml, sv):
     # Constraints
-    yml = "test.yml"
     tests       = get_tests(yml)
     constraints = get_constraints(yml)
     #print("\nTests: \n", tests)
