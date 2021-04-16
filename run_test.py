@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-import os
+import glob, os
 import yaml
 import re
 import argparse
 import random
 import args_constraint_solver
 
+# -------------------------------
+# Path variables
+root    = os.getcwd()
+testdir = os.path.join(root,   ".")
+outdir  = os.path.join(root,   "out")
+pubdir  = os.path.join(outdir, "pub")
+simdir  = os.path.join(outdir, "sim")
+rundir  = os.path.join(outdir, "run")
+os.makedirs(pubdir, exist_ok=True)
+os.makedirs(simdir, exist_ok=True)
+os.makedirs(rundir, exist_ok=True)
+    
+# -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
     spec      = {}
     test_list = {}
@@ -47,6 +60,45 @@ def get_test_list(yml, tgt_test, tgt_group):
    
     return test_list
 
+# -------------------------------
+def ln_sf(src, dst):
+    if os.path.exists(dst) : os.remove(dst)
+    os.symlink(src, dst)
+def source_publish():
+    os.chdir(pubdir)
+    # Gen constraints_solver.sv
+    sv = os.path.join(pubdir, "constraints_solver.sv")
+    print('     -> Gen {}'.format(sv))
+    args_constraint_solver.GenConstrintsSolver(yml, sv)
+    # Soft-link testdir
+    print('     -> Publish source files')
+    for type in ('*.sv', '*.svh'):
+        for file in glob.glob(os.path.join(testdir,type)):
+            ln_sf(file, os.path.basename(file))
+
+# -------------------------------
+def vsc_compile():
+    os.chdir(simdir)
+    sv = os.path.join(pubdir, "constraints_solver.sv")
+    cmd = "vcs +incdir+{} {} {}/tb.sv -sverilog -o simv -l vcs_compile.log".format(pubdir, sv, testdir)
+    print(cmd)
+    ret = os.system(cmd)
+
+# -------------------------------
+def vsc_run(test_list):
+    count = 0
+    for inst,test in sorted(test_list.items()):
+        print('\n   -> [{}]: VCS run test - {}'.format(count, inst))
+        seed = random.getrandbits(32)
+        test_rundir = os.path.join(rundir, inst)
+        os.makedirs(test_rundir, exist_ok=True)
+        os.chdir(test_rundir)
+        cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
+        ret = os.system(cmd)
+        count += 1
+
+
+# -------------------------------
 # Hierarchy:
 #   ROOT
 #     -> out
@@ -58,18 +110,8 @@ def get_test_list(yml, tgt_test, tgt_group):
 #         -> run
 #           -> <TEST_x>
 #             -> ttx_args.cfg
-
+#
 if __name__ == "__main__":
-    root    = os.getcwd()
-    testdir = os.path.join(root,   ".")
-    outdir  = os.path.join(root,   "out")
-    pubdir  = os.path.join(outdir, "pub")
-    simdir  = os.path.join(outdir, "sim")
-    rundir  = os.path.join(outdir, "run")
-    os.makedirs(pubdir, exist_ok=True)
-    os.makedirs(simdir, exist_ok=True)
-    os.makedirs(rundir, exist_ok=True)
-    
     # Construct the argument parser
     ap = argparse.ArgumentParser()
     ap.add_argument("test", nargs='?', help="Test name")
@@ -91,28 +133,13 @@ if __name__ == "__main__":
     print("> Found tests: \n  " + str(sorted(test_list.keys())))
   
     # STEP 1: Source publish
-    os.chdir(pubdir)
     print('\n>> STEP 1: Source publish')
-    sv = os.path.join(pubdir, "constraints_solver.sv")
-    print('     -> Gen {}'.format(sv))
-    args_constraint_solver.GenConstrintsSolver(yml, sv)
-    
-    # STEP 2: VCS build
-    os.chdir(simdir)
+    source_publish()
+
+    # STEP 2: VCS compile
     print('\n>> STEP 2: VCS compile')
-    cmd = "vcs {} {}/tb.sv -sverilog -o simv -l vcs_compile.log".format(sv, testdir)
-    print(cmd)
-    ret = os.system(cmd)
+    vsc_compile()
     
     # STEP 3: VCS run
-    count = 0
-    for inst,test in sorted(test_list.items()):
-        print('\n>> STEP 3[{}]: VCS run test - {}'.format(count, inst))
-        seed = random.getrandbits(32)
-        test_rundir = os.path.join(rundir, inst)
-        os.makedirs(test_rundir, exist_ok=True)
-        os.chdir(test_rundir)
-        cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
-        ret = os.system(cmd)
-        count += 1
-
+    print('\n>> STEP 3: VCS run')
+    vsc_run(test_list)

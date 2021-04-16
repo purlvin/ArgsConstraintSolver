@@ -38,10 +38,10 @@ def get_constraints(yml):
     constr_class = {}
     cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
     for inc in cfg.get("constraints", []):
-        inc = os.path.join(os.path.dirname(yml),inc)
         constraints["files"].append(inc)
         class_name = None
         constr_name = None
+        inc = os.path.join(os.path.dirname(yml),inc)
         for line in open(inc).readlines():
             # Class
             m = re.match(r'.*class\s*(.*)\s*;.*', line)
@@ -135,7 +135,7 @@ def gen_solver_sv(sv, tests, constrains):
             f.write('    cmd = {cmd, " ", args};\n')
             f.write('    $fdisplay(fd, "%s", args);\n')
     f.write('    $fclose(fd);\n')
-    f.write('    cmd = {"echo run TTX_GENERATOR ", cmd};\n')
+    f.write('    cmd = {"echo Call TTX_GENERATOR ", cmd};\n')
     f.write('    $display("CMD: %s", cmd);\n')
     f.write('    $system(cmd);\n')
     f.write('  endfunction\n')
