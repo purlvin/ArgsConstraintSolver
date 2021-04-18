@@ -3,25 +3,13 @@
 # Test Suite 'math' Tests
 #------------------------------------------------
 # -> Test templates {
-  # --> __math_t {
-  __math_t : &__math_t
-    _conf : single_core
-    _constr_grps  : &__math_t__constr_grps
-      - constraints_math.global=1
-    _when : &__math_t__when 
-      - quick
-      - nightly
-    Description : "Template for all single core tests."
-  # }!__math_t
-
   # --> __conv_t {
   __conv_t : &__conv_t
-    <<: *__math_t
+    _base_test : single-core-conv
     _constr_grps : &__conv_t__constr_grps
-      - *__math_t__constr_grps
-      - constraints_math.conv=1
+      - constraints_conv.global=1
     _when  : &__conv_t__when
-      [*__math_t__when, conv]
+      [quick, nightly, conv]
     Description : "Template for math convolution tests."
   # }!__conv_t
 # }!templates
@@ -31,19 +19,28 @@
   conv_basic:
     <<: *__conv_t
     Description : |-
-      "- basic 4-packer test"
+      "- basic, stride of 2"
     _clones : 3
     _constr_grps : 
       - *__conv_t__constr_grps
-      - constraints_math.conv_basic=1
+      - constraints_conv.conv_basic=1
   
-  conv_multi_section:
+  conv_compressed:
     <<: *__conv_t
     Description : |-
-      "- bfp8 neginf mask multi-section"
+      "- high-z with compression, 95% due to large z"
     _clones : 5
     _constr_grps : 
       - *__conv_t__constr_grps
-      - constraints_math.conv_multi_section=1
-      - default=0
+      - constraints_conv.conv_compressed=1
+      - global=0
+
+  conv_random:
+    <<: *__conv_t
+    Description : |-
+      "- full random test"
+    _clones : 5
+    _constr_grps : 
+      - *__conv_t__constr_grps
+
 # }!Testcases

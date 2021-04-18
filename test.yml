@@ -1,9 +1,7 @@
 %YAML 1.1
 ---
 testsuites:
-  - math.yml
-  - coverage.yml
+  - conv.yml
 
 constraints: 
-  - constraints_math.svh
-  - constraints_coverage.svh
+  - constraints_conv.svh

@@ -123,17 +123,36 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
+    f.write('  function string SplitStr(string src, string sep);\n')
+    f.write('    for (int i=0; i<src.len()-sep.len(); i++) begin\n')
+    f.write('      if (sep.compare(src.substr(i,i+sep.len()-1))==0) begin\n')
+    f.write('        return src.substr(i+sep.len(), src.len()-1);\n')
+    f.write('      end\n')
+    f.write('    end\n')
+    f.write('  endfunction\n')
     f.write('  // Function: GenArgs\n')
     f.write('  function GenArgs();\n')
     f.write('    int fd;\n')
-    f.write('    string args, cmd;\n')
+    f.write('    string args, val, cmd;\n')
     f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
+    f.write('    cmd = "";\n')
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
-        for v in constrains["classes"][c]["vars"]:
-            f.write('    $sformat(args, "--{1}=%-0d", {0}_inst.{1});\n'.format(c, v))
-            f.write('    cmd = {cmd, " ", args};\n')
-            f.write('    $fdisplay(fd, "%s", args);\n')
+        for v,t in constrains["classes"][c]["vars"].items():
+            var = c + "_inst." + v
+            f.write('    //  ->> {0};\n'.format(v))
+            f.write('    if ({0} != `INTEGER__DIS) begin\n'.format(var))
+            if (t == "integer"):
+                f.write('      $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
+            else:
+                f.write('      val = SplitStr({0}.name(), "__");\n'.format(var))
+                f.write('      if (val == "EN")\n')
+                f.write('        $sformat(args, "--{0}");\n'.format(v))
+                f.write('      else\n')
+                f.write('        $sformat(args, "--{0}=%-0s", val);\n'.format(v))
+            f.write('      cmd = {cmd, " ", args};\n')
+            f.write('      $fdisplay(fd, "%s", args);\n')
+            f.write('    end\n')
     f.write('    $fclose(fd);\n')
     f.write('    cmd = {"echo Call TTX_GENERATOR ", cmd};\n')
     f.write('    $display("CMD: %s", cmd);\n')
