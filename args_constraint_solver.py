@@ -86,6 +86,7 @@ def gen_solver_sv(sv, tests, constrains):
     for inc in constrains["files"]:
         f.write('`include "{0}"\n'.format(inc))
     # program
+    f.write('\nimport "DPI-C" function string getenv(input string env_name);\n')
     f.write('\nmodule ttx_generator;\n')
     for c in constrains["classes"]:
         f.write('  {0:25} {1:>25}_inst = new();\n'.format(c, c))
@@ -123,12 +124,23 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
-    f.write('  function string SplitStr(string src, string sep);\n')
-    f.write('    for (int i=0; i<src.len()-sep.len(); i++) begin\n')
+    f.write('  function string GetCwdBaseName();\n')
+    f.write('    string arr[$] = SplitStr(getenv("PWD"), "/");\n')
+    f.write('    return arr[arr.size()-1];\n')
+    f.write('  endfunction\n')
+    f.write('  typedef string string_arr[$];\n')
+    f.write('  function string_arr SplitStr(string src, string sep);\n')
+    f.write('    string list[$];\n')
+    f.write('    int i,j;\n')
+    f.write('    list.delete();\n')
+    f.write('    for (i=0,j=0; i<src.len()-sep.len(); i++) begin\n')
     f.write('      if (sep.compare(src.substr(i,i+sep.len()-1))==0) begin\n')
-    f.write('        return src.substr(i+sep.len(), src.len()-1);\n')
+    f.write('        list.push_back(src.substr(j, i-1));\n')
+    f.write('        j = i+1;\n')
     f.write('      end\n')
     f.write('    end\n')
+    f.write('    list.push_back(src.substr(j+sep.len()-1, src.len()-1));\n')
+    f.write('    return list;\n')
     f.write('  endfunction\n')
     f.write('  // Function: GenArgs\n')
     f.write('  function GenArgs();\n')
@@ -145,7 +157,8 @@ def gen_solver_sv(sv, tests, constrains):
             if (t == "integer"):
                 f.write('      $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
             else:
-                f.write('      val = SplitStr({0}.name(), "__");\n'.format(var))
+                f.write('      string arr[$] = SplitStr({0}.name(), "__");\n'.format(var))
+                f.write('      val = arr[1];\n'.format(var))
                 f.write('      if (val == "EN")\n')
                 f.write('        $sformat(args, "--{0}");\n'.format(v))
                 f.write('      else\n')
@@ -155,7 +168,7 @@ def gen_solver_sv(sv, tests, constrains):
             f.write('    end\n')
     f.write('    $fclose(fd);\n')
     f.write('    cmd = {"echo Call TTX_GENERATOR ", cmd};\n')
-    f.write('    $display("CMD: %s", cmd);\n')
+    f.write('    $display("CMD: [%s] %s", GetCwdBaseName(), cmd);\n')
     f.write('    $system(cmd);\n')
     f.write('  endfunction\n')
 
