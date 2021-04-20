@@ -14,7 +14,7 @@ class constraints_conv;
   rand integer      slicez;
 
   // Default/Test template constraints
-  constraint global {
+  constraint conv_default {
     //inline_halo;
     //conv;
     filters   inside {`INTEGER__DIS,  8, 16, 32};

@@ -1,0 +1,29 @@
+%YAML 1.1
+---
+# Test Suite 'math' Tests
+#------------------------------------------------
+# -> Test templates {
+  # --> __conv_perf_t {
+  __conv_perf_t : &__conv_perf_t
+    _ttx : single-core-conv
+    _constr_grps : &__conv_perf_t__constr_grps
+      - constraints_conv_perf.conv_default=1
+      - constraints_conv_perf.conv_perf_default=1
+    _when  : &__conv_perf_t__when
+      [quick, nightly, conv, conv_perf]
+    Description : "Template for math convolution performance tests."
+  # }!__conv_perf_t
+# }!templates
+
+#------------------------------------------------
+# --> Testcases {
+  conv_perf_basic:
+    <<: *__conv_perf_t
+    Description : |-
+      "- full perforance random test"
+    _clones : 5
+    _constr_grps : 
+      - *__conv_perf_t__constr_grps
+      - constraints_conv_perf.conv_perf_basic=1
+
+# }!Testcases

@@ -5,9 +5,9 @@
 # -> Test templates {
   # --> __conv_t {
   __conv_t : &__conv_t
-    _base_test : single-core-conv
+    _ttx : single-core-conv
     _constr_grps : &__conv_t__constr_grps
-      - constraints_conv.global=1
+      - constraints_conv.conv_default=1
     _when  : &__conv_t__when
       [quick, nightly, conv]
     Description : "Template for math convolution tests."
@@ -33,7 +33,7 @@
     _constr_grps : 
       - *__conv_t__constr_grps
       - constraints_conv.conv_compressed=1
-      - global=0
+      - constraints_conv.conv=0
 
   conv_random:
     <<: *__conv_t

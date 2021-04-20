@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import glob, shutil, os
+from multiprocessing import Process
 import yaml
 import re
 import argparse
@@ -22,11 +23,9 @@ def get_test_list(yml, tgt_test, tgt_group):
     spec      = {}
     test_list = {}
     # Load all .yml
-    #FIXME: cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
     cfg = yaml.safe_load(open(yml))
     for inc in cfg.get("testsuites", []):
         inc = os.path.join(os.path.dirname(yml),inc)
-        #FIXME: spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
         spec.update(yaml.safe_load(open(inc)))
 
     # Load constraint groups per test
@@ -106,19 +105,26 @@ def vsc_compile():
     ret = os.system(cmd)
 
 # -------------------------------
+def testRunInParallel(id, inst, test):
+    print('   -> [{}]: VCS run test - {}'.format(id, inst))
+    seed = random.getrandbits(32)
+    test_rundir = os.path.join(rundir, inst)
+    os.makedirs(test_rundir, exist_ok=True)
+    os.chdir(test_rundir)
+    #cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
+    cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
+    print(cmd)
+    ret = os.system(cmd)
 def vsc_run(test_list):
-    count = 0
+    id = 0
+    proc = []
     for inst,test in sorted(test_list.items()):
-        print('   -> [{}]: VCS run test - {}'.format(count, inst))
-        seed = random.getrandbits(32)
-        test_rundir = os.path.join(rundir, inst)
-        os.makedirs(test_rundir, exist_ok=True)
-        os.chdir(test_rundir)
-        #cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
-        cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
-        print(cmd)
-        ret = os.system(cmd)
-        count += 1
+        p = Process(target=testRunInParallel, args=(id, inst, test))
+        p.start()
+        proc.append(p)
+        id += 1
+    for p in proc:
+        p.join()
 
 
 # -------------------------------

@@ -2,6 +2,9 @@
 ---
 testsuites:
   - conv.yml
+    #  - conv_perf.yml
 
 constraints: 
   - constraints_conv.svh
+    #  - constraints_conv_perf.svh
+
