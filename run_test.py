@@ -100,7 +100,8 @@ def source_publish():
 def vsc_compile():
     os.chdir(tbdir)
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{} {} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    #cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{} {} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    cmd = "vcs +incdir+{0} {1} {2}/tb.sv -sverilog -o {3}/simv -l vcs_compile.log".format(pubdir, sv, testdir, simdir)
     print(cmd)
     ret = os.system(cmd)
 
@@ -113,7 +114,8 @@ def vsc_run(test_list):
         test_rundir = os.path.join(rundir, inst)
         os.makedirs(test_rundir, exist_ok=True)
         os.chdir(test_rundir)
-        cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
+        #cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
+        cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
         print(cmd)
         ret = os.system(cmd)
         count += 1
