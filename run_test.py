@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import glob, os
+import glob, shutil, os
 import yaml
 import re
 import argparse
@@ -8,25 +8,26 @@ import args_constraint_solver
 
 # -------------------------------
 # Path variables
-root    = os.getcwd()
-testdir = os.path.join(root,   ".")
+root    = os.environ.get("ROOT")
+metadir = os.path.join(root,   "src/hardware/tb_tensix/meta")
+testdir = os.path.join(root,   "src/hardware/tb_tensix/tests")
+tbdir   = os.path.join(root,   "src/t6ifc/vcs-core")
 outdir  = os.path.join(root,   "out")
 pubdir  = os.path.join(outdir, "pub")
 simdir  = os.path.join(outdir, "sim")
 rundir  = os.path.join(outdir, "run")
-os.makedirs(pubdir, exist_ok=True)
-os.makedirs(simdir, exist_ok=True)
-os.makedirs(rundir, exist_ok=True)
-    
+
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
     spec      = {}
     test_list = {}
     # Load all .yml
-    cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    #FIXME: cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    cfg = yaml.safe_load(open(yml))
     for inc in cfg.get("testsuites", []):
         inc = os.path.join(os.path.dirname(yml),inc)
-        spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
+        #FIXME: spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
+        spec.update(yaml.safe_load(open(inc)))
 
     # Load constraint groups per test
     tests = {"groups": {}, "cases": {}}
@@ -61,26 +62,45 @@ def get_test_list(yml, tgt_test, tgt_group):
     return test_list
 
 # -------------------------------
+def  env_cleanup():
+    outdir = "{0}/out".format(root)
+    if os.path.exists(outdir): shutil.rmtree(outdir)
+    outdir = "{0}/out".format(testdir)
+    if os.path.exists(outdir): shutil.rmtree(outdir)
+    outdir = "{0}/tvm_tb/out".format(tbdir)
+    if os.path.exists(outdir): shutil.rmtree(outdir)
+    os.makedirs(pubdir, exist_ok=True)
+    os.makedirs(simdir, exist_ok=True)
+    os.makedirs(rundir, exist_ok=True)
+
+    
+# -------------------------------
 def ln_sf(src, dst):
-    if os.path.exists(dst) : os.remove(dst)
-    os.symlink(src, dst)
+    if os.path.exists(dst): os.remove(dst)
+    #os.symlink(src, dst)
+    os.system("ln -f {} {}".format(src, dst))
 def source_publish():
     os.chdir(pubdir)
     # Gen constraints_solver.sv
     sv = os.path.join(pubdir, "constraints_solver.sv")
     print('     -> Gen {}'.format(sv))
     args_constraint_solver.GenConstrintsSolver(yml, sv)
-    # Soft-link testdir
+    # Soft-link metadir
     print('     -> Publish source files')
     for type in ('*.sv', '*.svh'):
-        for file in glob.glob(os.path.join(testdir,type)):
+        for file in glob.glob(os.path.join(metadir,type)):
             ln_sf(file, os.path.basename(file))
+    # Prebuild libraries
+    print('     -> Prebuild libraries (tvm_tb.so)')
+    cmd = " make -C {}/tvm_tb -j8 SIM=vcs &> publish.log".format(tbdir)
+    print(cmd)
+    ret = os.system(cmd)
 
 # -------------------------------
 def vsc_compile():
-    os.chdir(simdir)
+    os.chdir(tbdir)
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "vcs +incdir+{} {} {}/tb.sv -sverilog -o simv -l vcs_compile.log".format(pubdir, sv, testdir)
+    cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{} {} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
     print(cmd)
     ret = os.system(cmd)
 
@@ -88,12 +108,13 @@ def vsc_compile():
 def vsc_run(test_list):
     count = 0
     for inst,test in sorted(test_list.items()):
-        print('\n   -> [{}]: VCS run test - {}'.format(count, inst))
+        print('   -> [{}]: VCS run test - {}'.format(count, inst))
         seed = random.getrandbits(32)
         test_rundir = os.path.join(rundir, inst)
         os.makedirs(test_rundir, exist_ok=True)
         os.chdir(test_rundir)
-        cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
+        cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
+        print(cmd)
         ret = os.system(cmd)
         count += 1
 
@@ -128,10 +149,14 @@ if __name__ == "__main__":
     print("> Seed: " + str(seed))
     
     # Test list
-    yml       = os.path.join(testdir, "test.yml")
+    yml       = os.path.join(metadir, "test.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
     print("> Found tests: \n  " + str(sorted(test_list.keys())))
   
+    # STEP 0: Env cleanup
+    print('\n>> STEP 0: Env cleanup')
+    env_cleanup()
+
     # STEP 1: Source publish
     print('\n>> STEP 1: Source publish')
     source_publish()

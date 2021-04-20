@@ -8,10 +8,12 @@ import os
 def get_tests(yml):
     spec = {}
     # Load all .yml
-    cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    #FIXME: cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    cfg = yaml.safe_load(open(yml))
     for inc in cfg.get("testsuites", []):
         inc = os.path.join(os.path.dirname(yml),inc)
-        spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
+        #FIXME: spec.update(yaml.load(open(inc), Loader=yaml.FullLoader))
+        spec.update(yaml.safe_load(open(inc)))
 
     # Load constraint groups per test
     tests = {"groups": {}, "cases": {}}
@@ -36,7 +38,8 @@ def get_constraints(yml):
     constraints = {"files": [], "classes": {}}
     # Load all .svh
     constr_class = {}
-    cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    #FIXME: cfg = yaml.load(open(yml), Loader=yaml.FullLoader)
+    cfg = yaml.safe_load(open(yml))
     for inc in cfg.get("constraints", []):
         constraints["files"].append(inc)
         class_name = None
@@ -86,7 +89,7 @@ def gen_solver_sv(sv, tests, constrains):
     for inc in constrains["files"]:
         f.write('`include "{0}"\n'.format(inc))
     # program
-    f.write('\nimport "DPI-C" function string getenv(input string env_name);\n')
+    f.write('\nimport \"DPI-C\" function string getenv(input string env_name);;\n')
     f.write('\nmodule ttx_generator;\n')
     for c in constrains["classes"]:
         f.write('  {0:25} {1:>25}_inst = new();\n'.format(c, c))
@@ -124,30 +127,19 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
-    f.write('  function string GetCwdBaseName();\n')
-    f.write('    string arr[$] = SplitStr(getenv("PWD"), "/");\n')
-    f.write('    return arr[arr.size()-1];\n')
-    f.write('  endfunction\n')
-    f.write('  typedef string string_arr[$];\n')
-    f.write('  function string_arr SplitStr(string src, string sep);\n')
-    f.write('    string list[$];\n')
-    f.write('    int i,j;\n')
-    f.write('    list.delete();\n')
-    f.write('    for (i=0,j=0; i<src.len()-sep.len(); i++) begin\n')
+    f.write('\n  //===========================================\n')
+    f.write('  function string SplitStr(string src, string sep);\n')
+    f.write('    for (int i=0; i<src.len()-sep.len(); i++) begin\n')
     f.write('      if (sep.compare(src.substr(i,i+sep.len()-1))==0) begin\n')
-    f.write('        list.push_back(src.substr(j, i-1));\n')
-    f.write('        j = i+1;\n')
+    f.write('        return src.substr(i+sep.len(), src.len()-1);\n')
     f.write('      end\n')
     f.write('    end\n')
-    f.write('    list.push_back(src.substr(j+sep.len()-1, src.len()-1));\n')
-    f.write('    return list;\n')
     f.write('  endfunction\n')
     f.write('  // Function: GenArgs\n')
-    f.write('  function GenArgs();\n')
+    f.write('  function GenArgs(input string testname);\n')
     f.write('    int fd;\n')
     f.write('    string args, val, cmd;\n')
     f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
-    f.write('    cmd = "";\n')
     for c in constrains["classes"]:
         f.write('    // -> {0}\n'.format(c))
         for v,t in constrains["classes"][c]["vars"].items():
@@ -157,8 +149,7 @@ def gen_solver_sv(sv, tests, constrains):
             if (t == "integer"):
                 f.write('      $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
             else:
-                f.write('      string arr[$] = SplitStr({0}.name(), "__");\n'.format(var))
-                f.write('      val = arr[1];\n'.format(var))
+                f.write('      val = SplitStr({0}.name(), "__");\n'.format(var))
                 f.write('      if (val == "EN")\n')
                 f.write('        $sformat(args, "--{0}");\n'.format(v))
                 f.write('      else\n')
@@ -167,8 +158,11 @@ def gen_solver_sv(sv, tests, constrains):
             f.write('      $fdisplay(fd, "%s", args);\n')
             f.write('    end\n')
     f.write('    $fclose(fd);\n')
-    f.write('    cmd = {"echo Call TTX_GENERATOR ", cmd};\n')
-    f.write('    $display("CMD: [%s] %s", GetCwdBaseName(), cmd);\n')
+    #f.write('    cmd = {"pushd ", getenv("ROOT"), "/src/hardware/tb_tensix/tests;  make TEST=single-core-conv GENARGS=\'", cmd, "\' compile_test SIM=vcs; ", "popd; cp ", getenv("ROOT"), "/src/hardware/tb_tensix/tests/out/single-core-conv/single-core-conv.ttx core.ttx"};\n')
+    #f.write('    cmd = {"make -C ", getenv("ROOT"), "/src/hardware/tb_tensix/tests  TEST=single-core-conv GENARGS=\'", cmd, "\' compile_test; ", " cp ", getenv("ROOT"), "/src/hardware/tb_tensix/tests/out/single-core-conv/single-core-conv.ttx core.ttx"};\n')
+    #f.write('    cmd = {"make -C ", getenv("ROOT"), "/src/hardware/tb_tensix/tests  TEST=single-core-conv GENARGS=\'", cmd, "\' compile_test SIM=vcs; ", " cp ", getenv("ROOT"), "/src/hardware/tb_tensix/tests/out/single-core-conv/single-core-conv.ttx core.ttx"};\n')
+    f.write('    cmd = {"make -C ", getenv("ROOT"), "/src/hardware/tb_tensix/tests OUTPUT_DIR=out/ttx/conv_basic", ""," TEST=single-core-conv GENARGS=\'", cmd, "\' compile_test SIM=vcs; ", " cp ", getenv("ROOT"), "/src/hardware/tb_tensix/tests/out/ttx/conv_basic/single-core-conv.ttx core.ttx"};\n')
+    f.write('    $display("CMD: %s", cmd);\n')
     f.write('    $system(cmd);\n')
     f.write('  endfunction\n')
 
@@ -193,7 +187,7 @@ def gen_solver_sv(sv, tests, constrains):
     #   Generate arguments
     f.write('\n    //--------------------------------------------\n')
     f.write('    // Generate arguments\n')
-    f.write('    GenArgs();\n')
+    f.write('    GenArgs(testname);\n')
     f.write('  endtask\n')
     f.write('endmodule\n')
     f.close()
