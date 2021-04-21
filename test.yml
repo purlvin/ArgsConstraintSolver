@@ -1,10 +1,23 @@
 %YAML 1.1
 ---
-testsuites:
-  - conv.yml
-    #  - conv_perf.yml
+
+testcases:
+# Entry: test.yml
+#------------------------------------------------
+  # -> Test templates {
+  __math_t : &__math_t
+    _constr_grps : &__math_t__constr_grps
+      - constraints_conv.conv_default=1
+    _when  : &__math_t__when
+      [quick, nightly, math]
+  # }!templates
+
+  __include__:
+    - conv.yml
+    - conv_perf.yml
+
 
 constraints: 
   - constraints_conv.svh
-    #  - constraints_conv_perf.svh
+  - constraints_conv_perf.svh
 

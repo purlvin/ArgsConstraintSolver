@@ -5,14 +5,9 @@ import re
 import sys
 import os
 
-def get_tests(yml):
-    spec = {}
-    # Load all .yml
-    cfg = yaml.safe_load(open(yml))
-    for inc in cfg.get("testsuites", []):
-        inc = os.path.join(os.path.dirname(yml),inc)
-        spec.update(yaml.safe_load(open(inc)))
-
+def get_tests():
+    yml = "test_expanded.yml"
+    spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
     tests = {"groups": {}, "cases": {}, "ttx": {}}
     for test in spec:
@@ -26,7 +21,7 @@ def get_tests(yml):
             cfg = [i.strip() for i in constr_grp.split("=")]
             (len(cfg) == 1) and cfg.append(1)
             if (test not in tests["cases"]): tests["cases"][test] = []
-            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0].replace('.', '_inst.'))
+            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0])
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
@@ -34,10 +29,10 @@ def get_tests(yml):
     return tests
 
 def get_constraints(yml):
-    constraints = {"files": [], "classes": {}}
+    constraints = {"files": [], "classes": {}, "remap":{}}
     # Load all .svh
     constr_class = {}
-    cfg = yaml.safe_load(open(yml))
+    cfg = yaml.load(open(yml), Loader=yaml.SafeLoader)
     for inc in cfg.get("constraints", []):
         constraints["files"].append(inc)
         class_name = None
@@ -50,10 +45,11 @@ def get_constraints(yml):
                 class_name = m.group(1)
                 m = re.match(r'(\w*)\s*extends\s*(\w*)', class_name)
                 if (m):
-                    class_name, father = m.groups()
+                    class_name, orig = m.groups()
                 else:
-                    father = None
-                constr_class[class_name] = {"father": father, "vars": {}, "constrs": []}
+                    orig = None
+                constr_class[class_name] = {"orig": orig, "vars": {}, "constrs": []}
+                constraints["remap"][class_name] = class_name
             # Class - variables
             m = re.match(r'.*rand\s*(\w+)\s*(\w+)\s*;.*', line)
             if (m):
@@ -65,23 +61,24 @@ def get_constraints(yml):
                 constr_name = m.group(1)
                 if (constr_name not in constr_class[class_name]["constrs"]):
                     constr_class[class_name]["constrs"].append(constr_name)
-    redundant_class = []
+    dep_class = {}
     for class_name in constr_class:
         def recesive_get_vars(class_name):
-            if (not constr_class[class_name]["father"]):
+            if (not constr_class[class_name]["orig"]):
                 return constr_class[class_name].copy()
             else:
-                father = recesive_get_vars(constr_class[class_name]["father"])
+                orig = recesive_get_vars(constr_class[class_name]["orig"])
                 for k in constr_class[class_name]["vars"]:
-                    father["vars"][k] = constr_class[class_name]["vars"][k]
-                father["constrs"] = list(set(father["constrs"]) | set(constr_class[class_name]["constrs"]))
-                return father
-        if (constr_class[class_name]["father"]): 
-            #constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
+                    orig["vars"][k] = constr_class[class_name]["vars"][k]
+                orig["constrs"] = list(set(orig["constrs"]) | set(constr_class[class_name]["constrs"]))
+                return orig
+        if (constr_class[class_name]["orig"]): 
+            constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
             constr_class[class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]
-            #redundant_class.append(constr_class[class_name]["father"])
+            constraints["remap"][constr_class[class_name]["orig"]] = class_name
     for class_name in constr_class:
-        if class_name not in redundant_class: constraints["classes"][class_name] = constr_class[class_name]
+        if (constraints["remap"][class_name] == class_name): constraints["classes"][class_name] = constr_class[class_name]
+
     return constraints
 
 def gen_solver_sv(sv, tests, constrains):
@@ -92,8 +89,11 @@ def gen_solver_sv(sv, tests, constrains):
     # program
     f.write('\nimport "DPI-C" function string getenv(input string env_name);\n')
     f.write('\nmodule ttx_generator;\n')
-    for c in constrains["classes"]:
-        f.write('  {0:25} {1:>25}_inst = new();  // <- class \'{2}\'\n'.format(c, c, constrains["classes"][c]["father"]))
+    for c,v in constrains["remap"].items():
+        if (c == v): 
+            f.write('  {0:25} {1:>25}_inst = new();  // <- class \'{2}\'\n'.format(c, c, v))
+        else:
+            f.write('  //XXX: {0:18} {1:>25}_inst = new();  // <- class \'{2}\'\n'.format(c, v, v))
     
     f.write('\n  //===========================================\n')
     f.write('  // Function: ConfigConstrGrps\n')
@@ -111,7 +111,8 @@ def gen_solver_sv(sv, tests, constrains):
         f.write('      "{0}": begin\n'.format(t))
         f.write('        $display("[constraints_solver] Enable test constraint groups: {0}");\n'.format(tests["cases"][t]))
         for g in tests["cases"][t]:
-            f.write('        {1}.constraint_mode(1);\n'.format(c, g))
+            arr = g.split(".")
+            f.write('        {0}_inst.{1}.constraint_mode(1);\n'.format(constrains["remap"][arr[0]], arr[1]))
         f.write('      end\n')
     f.write('      default: begin\n'.format(t))
     f.write('        $display("[constraints_solver] ERROR: No test is matched, all constraint groups are disalbed by default!");\n'.format(g))
@@ -215,7 +216,7 @@ def gen_solver_sv(sv, tests, constrains):
 
 def GenConstrintsSolver(yml, sv):
     # Constraints
-    tests       = get_tests(yml)
+    tests       = get_tests()
     constraints = get_constraints(yml)
     #print("\nTests: \n", tests)
     #print("\nConstrains: \n", constraints)

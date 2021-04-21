@@ -17,16 +17,43 @@ outdir  = os.path.join(root,   "out")
 pubdir  = os.path.join(outdir, "pub")
 simdir  = os.path.join(outdir, "sim")
 rundir  = os.path.join(outdir, "run")
+TEST_EXPENDED_YML = os.path.join(pubdir, "test_expanded.yml")
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
     spec      = {}
     test_list = {}
-    # Load all .yml
-    cfg = yaml.safe_load(open(yml))
-    for inc in cfg.get("testsuites", []):
-        inc = os.path.join(os.path.dirname(yml),inc)
-        spec.update(yaml.safe_load(open(inc)))
+    cfg = yaml.load(open(yml), Loader=yaml.SafeLoader)
+    #for inc in cfg.get("testsuites", []):
+    #    inc = os.path.join(os.path.dirname(yml),inc)
+    #    spec.update(yaml.load(open(inc), Loader=yaml.SafeLoader))
+   
+    # Generate TEST_EXPENDED_YML
+    print('     -> Generate expended test.yml: {0}'.format(TEST_EXPENDED_YML))
+    f = open(TEST_EXPENDED_YML, "w")
+    f.write("# ->> File: test.yml\n")
+    f.write("#------------------------------------------------\n")
+    testsuites = []
+    for k,v in cfg["testcases"].items():
+        if (k == "__include__"): 
+            for y in v: testsuites.append("# ->> File: {0}\n".format(y) + open(y).read())
+            continue
+        f.write("{0}: &{0}\n".format(k))
+        for k1,v1 in v.items():
+            if (type(v1) == list):
+                f.write("  {0}: &{1}_{0}\n".format(k1,k))
+                for v2 in v1: f.write("    - {0}\n".format(v2))
+            else: 
+                f.write("  {0}: {1}\n".format(k1,v1))
+    f.write("\n{0}".format("\n".join(testsuites)))
+    f.close()
+    spec = yaml.load(open(TEST_EXPENDED_YML), Loader=yaml.SafeLoader)
+    # Dump TEST_EXPENDED_YML
+    f = open(TEST_EXPENDED_YML + ".dump", "w")
+    yaml.Dumper.ignore_aliases = lambda *args : True
+    f.write(yaml.dump(spec))
+    f.close()
+    
 
     # Load constraint groups per test
     tests = {"groups": {}, "cases": {}}
@@ -48,7 +75,7 @@ def get_test_list(yml, tgt_test, tgt_group):
     
     # Generate test list 
     if (tgt_test) :
-        if tgt_test not in tests['cases']: raise ValueError("Invalid tgt_test name '{}'!".format(tgt_test)) 
+        if tgt_test not in tests['cases']: raise ValueError("Invalid test name '{}'!".format(tgt_test)) 
         val = tgt_test
         test_list[val] = val 
     else :
@@ -61,7 +88,7 @@ def get_test_list(yml, tgt_test, tgt_group):
     return test_list
 
 # -------------------------------
-def  env_cleanup():
+def env_cleanup():
     outdir = "{0}/out".format(root)
     if os.path.exists(outdir): shutil.rmtree(outdir)
     outdir = "{0}/out".format(testdir)
@@ -78,11 +105,11 @@ def ln_sf(src, dst):
     if os.path.exists(dst): os.remove(dst)
     #os.symlink(src, dst)
     os.system("ln -f {} {}".format(src, dst))
-def source_publish():
+def source_publish(yml):
     os.chdir(pubdir)
     # Gen constraints_solver.sv
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    print('     -> Gen {}'.format(sv))
+    print('     -> Generate {}'.format(sv))
     args_constraint_solver.GenConstrintsSolver(yml, sv)
     # Soft-link metadir
     print('     -> Publish source files')
@@ -156,18 +183,18 @@ if __name__ == "__main__":
     random.seed(args["seed"])
     print("> Seed: " + str(seed))
     
-    # Test list
-    yml       = os.path.join(metadir, "test.yml")
-    test_list = get_test_list(yml, args["test"], args["when"])
-    print("> Found tests: \n  " + str(sorted(test_list.keys())))
-  
     # STEP 0: Env cleanup
     print('\n>> STEP 0: Env cleanup')
     env_cleanup()
 
+    # STEP 0+: Test list
+    yml       = os.path.join(metadir, "test.yml")
+    test_list = get_test_list(yml, args["test"], args["when"])
+    print("> Found tests: \n  " + str(sorted(test_list.keys())))
+  
     # STEP 1: Source publish
     print('\n>> STEP 1: Source publish')
-    source_publish()
+    source_publish(yml)
 
     # STEP 2: VCS compile
     print('\n>> STEP 2: VCS compile')
