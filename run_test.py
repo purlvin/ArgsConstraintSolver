@@ -5,7 +5,7 @@ import yaml
 import re
 import argparse
 import random
-import args_constraint_solver
+import time
 
 # -------------------------------
 # Path variables
@@ -17,6 +17,7 @@ outdir  = os.path.join(root,   "out")
 pubdir  = os.path.join(outdir, "pub")
 simdir  = os.path.join(outdir, "sim")
 rundir  = os.path.join(outdir, "run")
+start_time  = time.time()
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
@@ -166,9 +167,9 @@ if __name__ == "__main__":
     seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]
     random.seed(args["seed"])
     print(" (Seed: " + str(seed) + ")")
-    
+   
     # STEP 0: Env cleanup
-    print('\n>> STEP 0: Env cleanup', flush=True)
+    print('\n [{0:0.2f}] STEP 0: Env cleanup'.format((time.time()-start_time)), flush=True)
     env_cleanup()
     # STEP 0+: Test list
     cmd = " cd {0} && make gen".format(metadir)
@@ -179,13 +180,14 @@ if __name__ == "__main__":
     print("> Found tests: \n  " + str(sorted(test_list.keys())))
 
     # STEP 1: Source publish
-    print('\n>> STEP 1: Source publish', flush=True)
+    print('\n [{0:0.2f}] STEP 1: Source publish'.format((time.time()-start_time)), flush=True)
     source_publish(test_list)
     
     # STEP 2: VCS compile
-    print('\n>> STEP 2: VCS compile', flush=True)
+    print('\n [{0:0.2f}] STEP 2: VCS compile'.format((time.time()-start_time)), flush=True)
     vsc_compile()
     
     # STEP 3: VCS run
-    print('\n>> STEP 3: VCS run', flush=True)
+    print('\n [{0:0.2f}] STEP 3: VCS run'.format((time.time()-start_time)), flush=True)
     vsc_run(test_list)
+

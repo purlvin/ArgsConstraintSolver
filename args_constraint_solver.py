@@ -5,6 +5,8 @@ import math
 import re
 import sys
 import os
+import pprint
+import copy
 
 def get_test_spec(yml, outdir):
     spec = {"constraints": {}, "tests": {}}
@@ -44,13 +46,13 @@ def get_test_spec(yml, outdir):
     for class_name in constraints["class"]:
         def recesive_get_vars(class_name):
             if (not constraints["class"][class_name]["orig"]):
-                return constraints["class"][class_name].copy()
+                return copy.deepcopy(constraints["class"][class_name])
             else:
                 orig = recesive_get_vars(constraints["class"][class_name]["orig"])
                 for k in constraints["class"][class_name]["vars"]:
                     orig["vars"][k] = constraints["class"][class_name]["vars"][k]
                 orig["constrs"] = list(set(orig["constrs"]) | set(constraints["class"][class_name]["constrs"]))
-                return orig
+                return orig.copy()
         if (constraints["class"][class_name]["orig"]): 
             constraints["class"][class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
             constraints["class"][class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]
