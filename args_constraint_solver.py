@@ -6,71 +6,20 @@ import re
 import sys
 import os
 
-def get_tests(yml, outdir):
-    spec   = {}
-    cfg    = yaml.load(open(yml), Loader=yaml.SafeLoader)
-    ymlout =  os.path.join(outdir, os.path.basename(yml.replace(".yml", "_expanded.yml")))
-    # Generate yml
-    print('  -> Generate expended test.yml: {0}'.format(ymlout))
-    f = open(ymlout, "w")
-    f.write("# ->> File: test.yml\n")
-    f.write("#------------------------------------------------\n")
-    testsuites = []
-    for k,v in cfg["templates"].items():
-        f.write("{0}: &{0}\n".format(k))
-        for k1,v1 in v.items():
-            if (type(v1) == list):
-                f.write("  {0}: &{1}_{0}\n".format(k1,k))
-                for v2 in v1: f.write("    - {0}\n".format(v2))
-            else: 
-                f.write("  {0}: {1}\n".format(k1,v1))
-    for ymlin in cfg["includes"]:
-        ymlin = os.path.join(os.path.dirname(yml),ymlin)
-        testsuites.append("# ->> File: {0}\n".format(ymlin) + open(ymlin).read())
-    f.write("\n{0}".format("\n".join(testsuites)))
-    f.close()
-    spec = yaml.load(open(ymlout), Loader=yaml.SafeLoader)
-    # Dump yml
-    ymlout = ymlout + ".dump"
-    #print('  -> Generate test.yml postprocess file: {0}'.format(ymlout))
-    f = open(ymlout, "w")
-    yaml.Dumper.ignore_aliases = lambda *args : True
-    f.write(yaml.dump(spec))
-    f.close()
-    
-    # Load constraint groups per test
-    tests = {"groups": {}, "cases": {}, "ttx": {}}
-    for test in spec:
-        if re.search("^__.*_t$", test):
-            continue
-        test_hash = spec[test]
-        def flatten_list(irregular_list):
-            return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
-        for constr_grp in flatten_list(test_hash["_constr_grps"]):
-            k, v = [i.strip() for i in constr_grp.split("=")]
-            cfg = [i.strip() for i in constr_grp.split("=")]
-            (len(cfg) == 1) and cfg.append(1)
-            if (test not in tests["cases"]): tests["cases"][test] = []
-            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0])
-        for group in flatten_list(test_hash["_when"]):
-            if group not in tests["groups"]: tests["groups"][group] = {}
-            tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
-        tests["ttx"][test] = test_hash["_ttx"]
-    return tests
-
-def get_constraints(yml):
-    constraints = {"files": [], "classes": {}, "remap":{}}
-    # Load all .svh
-    constr_class = {}
+def get_test_spec(yml, outdir):
+    spec = {"constraints": {}, "tests": {}}
     cfg = yaml.load(open(yml), Loader=yaml.SafeLoader)
+    
+    # Constraint groups
+    constraints = {"file": [], "class": {}}
     for inc in ["global.svh"] + cfg["includes"]:
-        inc = "constraints_" + inc.replace(".yml", ".svh")
-        constraints["files"].append(inc)
+        svh = "constraints_" + inc.replace(".yml", ".svh")
+        constraints["file"].append(svh)
         class_name = None
         constr_name = None
-        inc = os.path.join(os.path.dirname(yml),inc)
-        if not os.path.exists(inc): raise ValueError("Constraint file '{}' for test suite is missing!".format(inc, os.path.basename(yml).replace(".yml",""))) 
-        for line in open(inc).readlines():
+        svh = os.path.join(os.path.dirname(yml),svh)
+        if not os.path.exists(svh): raise ValueError("Constraint file '{0}' for {1} is missing!".format(svh, os.path.basename(inc.replace(".yml","")))) 
+        for line in open(svh).readlines():
             # Class
             m = re.match(r'.*class\s*(.*)\s*;.*', line)
             if (m):
@@ -80,123 +29,124 @@ def get_constraints(yml):
                     class_name, orig = m.groups()
                 else:
                     orig = None
-                constr_class[class_name] = {"orig": orig, "vars": {}, "constrs": []}
-                constraints["remap"][class_name] = class_name
+                constraints["class"][class_name] = {"orig": orig, "vars": {}, "constrs": []}
             # Class - variables
             m = re.match(r'.*rand\s*(\w+)\s*(\w+)\s*;.*', line)
             if (m):
                 k, v = m.groups()
-                constr_class[class_name]["vars"][v] = k
+                constraints["class"][class_name]["vars"][v] = k
             # Constraint
             m = re.match(r'.*constraint\s*(\w+)\s*{.*', line)
             if (m):
                 constr_name = m.group(1)
-                if (constr_name not in constr_class[class_name]["constrs"]):
-                    constr_class[class_name]["constrs"].append(constr_name)
-    for class_name in constr_class:
+                if (constr_name not in constraints["class"][class_name]["constrs"]):
+                    constraints["class"][class_name]["constrs"].append(constr_name)
+    for class_name in constraints["class"]:
         def recesive_get_vars(class_name):
-            if (not constr_class[class_name]["orig"]):
-                return constr_class[class_name].copy()
+            if (not constraints["class"][class_name]["orig"]):
+                return constraints["class"][class_name].copy()
             else:
-                orig = recesive_get_vars(constr_class[class_name]["orig"])
-                for k in constr_class[class_name]["vars"]:
-                    orig["vars"][k] = constr_class[class_name]["vars"][k]
-                orig["constrs"] = list(set(orig["constrs"]) | set(constr_class[class_name]["constrs"]))
+                orig = recesive_get_vars(constraints["class"][class_name]["orig"])
+                for k in constraints["class"][class_name]["vars"]:
+                    orig["vars"][k] = constraints["class"][class_name]["vars"][k]
+                orig["constrs"] = list(set(orig["constrs"]) | set(constraints["class"][class_name]["constrs"]))
                 return orig
-        if (constr_class[class_name]["orig"]): 
-            constr_class[class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
-            constr_class[class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]
-            constraints["remap"][constr_class[class_name]["orig"]] = class_name
-    for class_name in constr_class:
-        if (constraints["remap"][class_name] == class_name): constraints["classes"][class_name] = constr_class[class_name]
+        if (constraints["class"][class_name]["orig"]): 
+            constraints["class"][class_name]["vars"]    = recesive_get_vars(class_name)["vars"]       
+            constraints["class"][class_name]["constrs"] = recesive_get_vars(class_name)["constrs"]
+    for class_name in constraints["class"]: constraints["class"][class_name]["orig"] = None
+    spec["constraints"] = constraints
 
-    return constraints
-    
-    spec   = {}
-    cfg    = yaml.load(open(yml), Loader=yaml.SafeLoader)
+    # Testcases
+    stream = {"templates": "", "testcases": ""}
     ymlout =  os.path.join(outdir, os.path.basename(yml.replace(".yml", "_expanded.yml")))
-    # Generate yml
+    # Expanded yml
     print('  -> Generate expended test.yml: {0}'.format(ymlout))
     f = open(ymlout, "w")
-    f.write("# ->> File: test.yml\n")
-    f.write("#------------------------------------------------\n")
-    testsuites = []
     for k,v in cfg["templates"].items():
-        f.write("{0}: &{0}\n".format(k))
+        stream["templates"] += "  {0}: &{0}\n".format(k)
         for k1,v1 in v.items():
             if (type(v1) == list):
-                f.write("  {0}: &{1}_{0}\n".format(k1,k))
-                for v2 in v1: f.write("    - {0}\n".format(v2))
+                stream["templates"] += "    {0}: &{1}_{0}\n".format(k1,k)
+                for v2 in v1: stream["templates"] += "      - {0}\n".format(v2)
             else: 
-                f.write("  {0}: {1}\n".format(k1,v1))
+                stream["templates"] += "    {0}: {1}\n".format(k1,v1)
     for ymlin in cfg["includes"]:
-        ymlin = os.path.join(os.path.dirname(yml),ymlin)
-        testsuites.append("# ->> File: {0}\n".format(ymlin) + open(ymlin).read())
-    f.write("\n{0}".format("\n".join(testsuites)))
+        ymlin  = os.path.join(os.path.dirname(yml),ymlin)
+        category = None
+        for line in open(ymlin):
+            if re.search("templates\s*:", line):
+                category = "templates"
+            elif re.search("testcases\s*:", line):
+                category = "testcases"
+            elif ((category) and (not re.search("^\s*#", line))):  
+                stream[category] += line
+    f.write("\ntemplates:\n" + stream["templates"])
+    f.write("\ntestcases:\n" + stream["testcases"])
     f.close()
-    spec = yaml.load(open(ymlout), Loader=yaml.SafeLoader)
+    cfg = yaml.load(open(ymlout), Loader=yaml.SafeLoader)
     # Dump yml
     ymlout = ymlout + ".dump"
     #print('  -> Generate test.yml postprocess file: {0}'.format(ymlout))
     f = open(ymlout, "w")
     yaml.Dumper.ignore_aliases = lambda *args : True
-    f.write(yaml.dump(spec))
+    f.write(yaml.dump(cfg))
     f.close()
     
     # Load constraint groups per test
+    unused_class = list(spec["constraints"]["class"])
     tests = {"groups": {}, "cases": {}, "ttx": {}}
-    for test in spec:
-        if re.search("^__.*_t$", test):
-            continue
-        test_hash = spec[test]
+    for test, test_hash in cfg["testcases"].items():
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
         for constr_grp in flatten_list(test_hash["_constr_grps"]):
-            k, v = [i.strip() for i in constr_grp.split("=")]
             cfg = [i.strip() for i in constr_grp.split("=")]
-            (len(cfg) == 1) and cfg.append(1)
-            if (test not in tests["cases"]): tests["cases"][test] = []
-            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0])
+            if test_hash["_constr_class"] not in spec["constraints"]["class"]: raise ValueError("Invalid constraint class '{0}' specified for test '{1}' (Valid classes: {2})!".format(test_hash["_constr_class"], test, spec["constraints"]["class"].keys())) 
+            if cfg[0] not in spec["constraints"]["class"][test_hash["_constr_class"]]["constrs"]: raise ValueError("Invalid constraint group '{0}' specified for test '{1}' (Valid constraint groups: {2})!".format("{0}.{1}".format(test_hash["_constr_class"], cfg[0]), test, spec["constraints"]["class"][test_hash["_constr_class"]]["constrs"])) 
+            if (test not in tests["cases"]):        tests["cases"][test] = []
+            if ((len(cfg)==1) or (int(cfg[1])>0)):  
+                tests["cases"][test].append("_{0}.{1}".format(test_hash["_constr_class"], cfg[0]))
+                if (test_hash["_constr_class"] in unused_class): unused_class.remove(test_hash["_constr_class"])
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
         tests["ttx"][test] = test_hash["_ttx"]
-    return tests
+    spec["tests"] = tests
+    for c in unused_class: del spec["constraints"]["class"][c]
+    return spec
 
 
-def gen_solver_sv(sv, tests, constrains):
+def gen_solver_sv(sv, spec):
     f = open(sv, "w")
     # include
-    for inc in constrains["files"]:
+    for inc in spec["constraints"]["file"]:
         f.write('`include "{0}"\n'.format(inc))
     # program
     f.write('\nimport "DPI-C" function string getenv(input string env_name);\n')
     f.write('\nmodule ttx_generator;\n')
-    print(constrains);
-    for c,v in constrains["remap"].items():
-        if (c == v): 
-            f.write('  {0:25} {1:>25}_inst = new();  // <- class \'{2}\'\n'.format(c, c, v))
-        else:
-            f.write('  //XXX: {0:18} {1:>25}_inst = new();  // <- class \'{2}\'\n'.format(c, v, v))
+    for c,v in spec["constraints"]["class"].items():
+        f.write('  {0:28} {1:>25} = new();\n'.format(c, "_"+c))
+        f.write('  {0:28} {1:>25};\n'.format("logic", "_"+c+"_enable"))
     
     f.write('\n  //===========================================\n')
     f.write('  // Function: ConfigConstrGrps\n')
     f.write('  function ConfigConstrGrps(input string testname);\n')
     #   Disable all constraints by default
     f.write('    // Disable all constraints by default\n')
-    for c in constrains["classes"]:
+    for c,v in spec["constraints"]["class"].items():
         f.write('    // -> class "{0}"\n'.format(c))
-        for g in constrains["classes"][c]["constrs"]:
-            f.write('    {0}_inst.{1}.constraint_mode(0);\n'.format(c, g))
+        f.write('    {0} = 0\n'.format("_"+c+"_enable"))
+        for g in v["constrs"]:
+            f.write('    {0}.{1}.constraint_mode(0);\n'.format("_"+c, g))
     #   Enable constraints per testcase and testsuite
     f.write('\n    // Enable constraints per testcase and testsuite\n')
     f.write('    case (testname)\n')
-    for t in tests["cases"]:
+    for t,v in spec["tests"]["cases"].items():
         f.write('      "{0}": begin\n'.format(t))
-        f.write('        $display("[constraints_solver] Enable test constraint groups: {0}");\n'.format(tests["cases"][t]))
-        for g in tests["cases"][t]:
-            arr = g.split(".")
-            f.write('        {0}_inst.{1}.constraint_mode(1);\n'.format(constrains["remap"][arr[0]], arr[1]))
+        f.write('        $display("[constraints_solver] Enable test constraint groups: {0}");\n'.format(v))
+        f.write('        {0} = 1\n'.format(v[0].split(".")[0]+"_enable"))
+        for g in v:
+            f.write('        {0}.constraint_mode(1);\n'.format(g))
         f.write('      end\n')
     f.write('      default: begin\n'.format(t))
     f.write('        $display("[constraints_solver] ERROR: No test is matched, all constraint groups are disalbed by default!");\n'.format(g))
@@ -207,9 +157,9 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('\n  //===========================================\n')
     f.write('  // Function: RandomizeConstrs\n')
     f.write('  function RandomizeConstrs();\n')
-    for c in constrains["classes"]:
+    for c in spec["constraints"]["class"]:
         f.write('    // -> {0}\n'.format(c))
-        f.write('    {0}_inst.randomize();\n'.format(c))
+        f.write('    {0}.randomize();\n'.format("_"+c))
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
@@ -234,7 +184,7 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('  function string GetTtxName(input string testname);\n')
     f.write('    string ret = "UNKNOWN";\n')
     f.write('    case(testname)\n')
-    for t,v in tests["ttx"].items():
+    for t,v in spec["tests"]["ttx"].items():
         f.write('      "{0}": ret = "{1}";\n'.format(t, v))
     f.write('    endcase\n')
     f.write('    return ret;\n')
@@ -245,31 +195,31 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('    string args, val, cmd;\n')
     f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
     f.write('    cmd = "";\n')
-    for c in constrains["classes"]:
-        f.write('    // -> {0}\n'.format(c))
-        for v,t in constrains["classes"][c]["vars"].items():
-            var = c + "_inst." + v
-            f.write('    //  ->> {0};\n'.format(v))
-            f.write('    if ({0} != `INTEGER__DIS) begin\n'.format(var))
+    for c in spec["constraints"]["class"]:
+        f.write('\n    // -> Class {0}\n'.format(c))
+        f.write('    if (_{0}_enable) begin\n'.format(c))
+        for v,t in spec["constraints"]["class"][c]["vars"].items():
+            var = "_" + c + "." + v
+            f.write('      //  ->> {0};\n'.format(v))
+            f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var))
             if (t == "integer"):
-                f.write('      $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
+                f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
             else:
-                f.write('      string arr[$] = SplitStr({0}.name(), "__");\n'.format(var))
-                f.write('      val = arr[1];\n'.format(var))
-                f.write('      if (val == "EN")\n')
-                f.write('        $sformat(args, "--{0}");\n'.format(v))
-                f.write('      else\n')
-                f.write('        $sformat(args, "--{0}=%-0s", val);\n'.format(v))
-            f.write('      cmd = {cmd, " ", args};\n')
-            f.write('      $fdisplay(fd, "%s", args);\n')
-            f.write('    end\n')
-    f.write('    $fclose(fd);\n')
+                f.write('        string arr[$] = SplitStr({0}.name(), "__");\n'.format(var))
+                f.write('        val = arr[1];\n'.format(var))
+                f.write('        if (val == "EN")\n')
+                f.write('          $sformat(args, "--{0}");\n'.format(v))
+                f.write('        else\n')
+                f.write('          $sformat(args, "--{0}=%-0s", val);\n'.format(v))
+            f.write('        cmd = {cmd, " ", args};\n')
+            f.write('        $fdisplay(fd, "%s", args);\n')
+            f.write('      end\n')
+        f.write('    end\n')
+    f.write('    $fclose(fd);\n\n')
     #f.write('    cmd = {"make -j8 -C ", getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests TEST_OUT=", GetCwdBaseName()," TEST=", GetTtxName(testname)," GENARGS=\'", cmd, "\' compile_test; ", " ln -sf ",getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests/out/", GetCwdBaseName(), "/", GetTtxName(testname), ".ttx core.ttx"};\n')
-    f.write('    cmd = {getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti/out/ckti --dir=. --test=", GetTtxName(testname), "; stat /localhome/mchit/work/blackhole_rtl_vcs_2/out/run/conv_basic/single-core-conv.ttx;"};\n')
+    f.write('    cmd = {getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti/out/ckti --dir=. --test=", GetTtxName(testname)};\n')
     f.write('    $display("CMD: %s", cmd);\n')
     f.write('    $system(cmd);\n')
-    f.write('    $display("CMD: %s", cmd);\n')
-    f.write('    $system(" stat /localhome/mchit/work/blackhole_rtl_vcs_2/out/run/conv_basic/single-core-conv.ttx;");\n')
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
@@ -298,15 +248,6 @@ def gen_solver_sv(sv, tests, constrains):
     f.write('endmodule\n')
     f.close()
 
-def GenConstrintsSolver(yml, sv):
-    # Constraints
-    constraints = get_constraints(yml)
-    tests       = get_tests(yml, os.path.dirname(sv))
-    test_info = get_test_info(yml, os.path.dirname(sv))
-    #print("\nTests: \n", tests)
-    #print("\nConstrains: \n", constraints)
-    gen_solver_sv(sv, tests, constraints)
-
 
 if __name__ == "__main__":
     # Construct the argument parser
@@ -319,5 +260,7 @@ if __name__ == "__main__":
     #    if (v): print("  {} : {}".format(k, v))
 
     # Generate constranint systemveilog module
-    GenConstrintsSolver(args["yml"], args["out"])
+    spec = get_test_spec(args["yml"], os.path.dirname(args["out"]))
+    #print("\nSpec: \n", spec)
+    gen_solver_sv(args["out"], spec)
 

@@ -22,20 +22,11 @@ rundir  = os.path.join(outdir, "run")
 def get_test_list(yml, tgt_test, tgt_group):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
-    tests = {"groups": {}, "cases": {}, "ttx": {}}
-    for test in spec:
-        if re.search("^__.*_t$", test):
-            continue
-        test_hash = spec[test]
+    tests = {"groups": {}, "ttx": {}}
+    for test,test_hash in spec["testcases"].items():
         tests["ttx"][test] = test_hash["_ttx"] 
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
-        for constr_grp in flatten_list(test_hash["_constr_grps"]):
-            k, v = [i.strip() for i in constr_grp.split("=")]
-            cfg = [i.strip() for i in constr_grp.split("=")]
-            (len(cfg) == 1) and cfg.append(1)
-            if (test not in tests["cases"]): tests["cases"][test] = []
-            if (int(cfg[1])>0): tests["cases"][test].append(cfg[0].replace('.', '_inst.'))
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1

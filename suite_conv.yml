@@ -1,43 +1,44 @@
 # Test Suite 'conv' Tests
 #------------------------------------------------
-# -> Test templates {
-__conv_t : &__conv_t
-  <<: *__math_t
-  _ttx : single-core-conv
-  _constr_class : constraints_suite_conv
-  _constr_grps : &__conv_t__constr_grps
-    - *__math_t__constr_grps
-    - suite_conv_default=1
-  _when  : &__conv_t__when
-    [*__math_t__when, conv]
-  Description : "Template for math convolution tests."
-#}!templates
+# -> Test templates
+templates:
+  __conv_t : &__conv_t
+    <<: *__math_t
+    _ttx : single-core-conv
+    _constr_class : constraints_suite_conv
+    _constr_grps  : &__conv_t__constr_grps
+      - *__math_t__constr_grps
+      - suite_conv_default=1
+    _when  : &__conv_t__when
+      [*__math_t__when, conv]
+    Description : "Template for math convolution tests."
 
-# --> Testcases {
-conv_basic:
-  <<: *__conv_t
-  Description : |-
-    "- basic, stride of 2"
-  _clones : 3
-  _constr_grps : 
-    - *__conv_t__constr_grps
-    - conv_basic=1
-
-conv_compressed:
-  <<: *__conv_t
-  Description : |-
-    "- high-z with compression, 95% due to large z"
-  _clones : 5
-  _constr_grps : 
-    - *__conv_t__constr_grps
-    - conv_compressed=1
-    - suite_conv=0
-
-conv_random:
-  <<: *__conv_t
-  Description : |-
-    "- full random test"
-  _clones : 5
-  _constr_grps : 
-    - *__conv_t__constr_grps
-# }!Testcases
+#------------------------------------------------
+# -> Testcases
+testcases:
+  conv_basic:
+    <<: *__conv_t
+    Description : |-
+      "- basic, stride of 2"
+    _clones : 3
+    _constr_grps : 
+      - *__conv_t__constr_grps
+      - conv_basic=1
+  
+  conv_compressed:
+    <<: *__conv_t
+    Description : |-
+      "- high-z with compression, 95% due to large z"
+    _clones : 5
+    _constr_grps : 
+      - *__conv_t__constr_grps
+      - conv_compressed=1
+      - suite_conv_default=0
+  
+  conv_random:
+    <<: *__conv_t
+    Description : |-
+      "- full random test"
+    _clones : 5
+    _constr_grps : 
+      - *__conv_t__constr_grps
