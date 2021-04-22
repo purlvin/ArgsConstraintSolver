@@ -17,50 +17,17 @@ outdir  = os.path.join(root,   "out")
 pubdir  = os.path.join(outdir, "pub")
 simdir  = os.path.join(outdir, "sim")
 rundir  = os.path.join(outdir, "run")
-TEST_EXPENDED_YML = os.path.join(pubdir, "test_expanded.yml")
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
-    spec      = {}
-    test_list = {}
-    cfg = yaml.load(open(yml), Loader=yaml.SafeLoader)
-    #for inc in cfg.get("testsuites", []):
-    #    inc = os.path.join(os.path.dirname(yml),inc)
-    #    spec.update(yaml.load(open(inc), Loader=yaml.SafeLoader))
-   
-    # Generate TEST_EXPENDED_YML
-    print('     -> Generate expended test.yml: {0}'.format(TEST_EXPENDED_YML))
-    f = open(TEST_EXPENDED_YML, "w")
-    f.write("# ->> File: test.yml\n")
-    f.write("#------------------------------------------------\n")
-    testsuites = []
-    for k,v in cfg["testcases"].items():
-        if (k == "__include__"): 
-            for y in v: testsuites.append("# ->> File: {0}\n".format(y) + open(y).read())
-            continue
-        f.write("{0}: &{0}\n".format(k))
-        for k1,v1 in v.items():
-            if (type(v1) == list):
-                f.write("  {0}: &{1}_{0}\n".format(k1,k))
-                for v2 in v1: f.write("    - {0}\n".format(v2))
-            else: 
-                f.write("  {0}: {1}\n".format(k1,v1))
-    f.write("\n{0}".format("\n".join(testsuites)))
-    f.close()
-    spec = yaml.load(open(TEST_EXPENDED_YML), Loader=yaml.SafeLoader)
-    # Dump TEST_EXPENDED_YML
-    f = open(TEST_EXPENDED_YML + ".dump", "w")
-    yaml.Dumper.ignore_aliases = lambda *args : True
-    f.write(yaml.dump(spec))
-    f.close()
-    
-
+    spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
-    tests = {"groups": {}, "cases": {}}
+    tests = {"groups": {}, "cases": {}, "ttx": {}}
     for test in spec:
         if re.search("^__.*_t$", test):
             continue
         test_hash = spec[test]
+        tests["ttx"][test] = test_hash["_ttx"] 
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
         for constr_grp in flatten_list(test_hash["_constr_grps"]):
@@ -73,17 +40,17 @@ def get_test_list(yml, tgt_test, tgt_group):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
     
+    test_list = {}
     # Generate test list 
     if (tgt_test) :
-        if tgt_test not in tests['cases']: raise ValueError("Invalid test name '{}'!".format(tgt_test)) 
-        val = tgt_test
-        test_list[val] = val 
+        if tgt_test not in tests['ttx'].keys(): raise ValueError("Invalid test name '{}'!".format(tgt_test)) 
+        test_list[tgt_test] = tests['ttx'][tgt_test] 
     else :
         if tgt_group not in tests['groups']: raise ValueError("Invalid when tag '{}'!".format(tgt_group))
         val = tests['groups'][tgt_group]
         for k,v in val.items():
             for i in range(v):
-                test_list[k+"_"+str(i)] = k
+                test_list[k+"_"+str(i)] = tests['ttx'][k]
    
     return test_list
 
@@ -105,53 +72,79 @@ def ln_sf(src, dst):
     if os.path.exists(dst): os.remove(dst)
     #os.symlink(src, dst)
     os.system("ln -f {} {}".format(src, dst))
-def source_publish(yml):
+def source_publish(test_list):
     os.chdir(pubdir)
-    # Gen constraints_solver.sv
-    sv = os.path.join(pubdir, "constraints_solver.sv")
-    print('     -> Generate {}'.format(sv))
-    args_constraint_solver.GenConstrintsSolver(yml, sv)
-    # Soft-link metadir
-    print('     -> Publish source files')
-    for type in ('*.sv', '*.svh'):
-        for file in glob.glob(os.path.join(metadir,type)):
-            ln_sf(file, os.path.basename(file))
-    # Prebuild libraries
-    print('     -> Prebuild libraries (tvm_tb.so)')
-    cmd = " make -C {}/tvm_tb -j8 SIM=vcs &> publish.log".format(tbdir)
-    print(cmd)
+    
+    cmd = '''\
+export ROOT={0}
+echo -e "-- STAGE build_tools --"
+cd $ROOT/ && make -j 64
+cd $ROOT/src/software/assembler && make -j 64
+cd $ROOT/src/software/command_assembler && make -j 64
+cd $ROOT/src/test_ckernels/ckti && make -j 64
+cd $ROOT/src/test_ckernels/gen && make -j 64
+cd $ROOT/src/test_ckernels/src && make -j 64
+cd $ROOT/src/t6ifc/vcs-core/tvm_tb && make SIM=vcs -j 64
+echo -e "-- STAGE build_firmware --"
+cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/GRID-1x1
+echo -e "-- STAGE build_test_generator --"
+'''.format(root)
+    for ttx in list(set(test_list.values())):
+    	cmd += "cd $ROOT/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR=$ROOT/out/pub/ttx/{ttx} TEST={ttx} generator firmware".format(ttx=ttx)
+    sh = os.path.join(pubdir, "tb_build.sh")
+    f = open(sh, "w")
+    f.write(cmd)
+    f.close()
+    print('     -> Building testbench : {0}'.format(sh), flush=True)
+    cmd = "   source {0} &> {1}/publish.log ".format(sh, pubdir)
+    print(cmd, flush=True)
     ret = os.system(cmd)
+
+
+    ## Soft-link metadir
+    #print('     -> Publish source files', flush=True)
+    #for type in ('*.sv', '*.svh'):
+    #    for file in glob.glob(os.path.join(metadir,type)):
+    #        ln_sf(file, os.path.basename(file))
+    # Prebuild libraries
+    #print('     -> Prebuild libraries (tvm_tb.so)', flush=True)
+    ##cmd = " make -C {0}/tvm_tb -j8 SIM=vcs &> publish.log; make -j8 -C {1} TEST_OUT=conv_basic TEST=single-core-conv GENARGS='--inline_halo --conv=3x3s1 --filters=16' compile_test &>> publish.log".format(tbdir, testdir)
+    #cmd = " make -C {0}/tvm_tb -j8 SIM=vcs &> publish.log; ".format(tbdir, testdir)
+    #print(cmd)
+    #ret = os.system(cmd)
+
 
 # -------------------------------
 def vsc_compile():
     os.chdir(tbdir)
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    #cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{} {} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
-    cmd = "vcs +incdir+{0} {1} {2}/tb.sv -sverilog -o {3}/simv -l vcs_compile.log".format(pubdir, sv, testdir, simdir)
+    cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
     print(cmd)
     ret = os.system(cmd)
 
 # -------------------------------
-def testRunInParallel(id, inst, test):
-    print('   -> [{}]: VCS run test - {}'.format(id, inst))
+def testRunInParallel(id, test, ttx):
+    print('   -> [{}]: VCS run test - {}'.format(id, test))
     seed = random.getrandbits(32)
-    test_rundir = os.path.join(rundir, inst)
+    test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
     os.chdir(test_rundir)
-    #cmd = "{}/simv +testdef={}/{}/core.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={} +test={} &> vcs_run.log".format(simdir, rundir, test, seed, test)
-    cmd = "{}/simv +ntb_random_seed={} +test={}".format(simdir, seed, test)
+    cmd = "{0}/simv +testdef={1}/{2}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {1}/vcs_run.log".format(simdir, rundir, test, seed, ttx)
     print(cmd)
     ret = os.system(cmd)
 def vsc_run(test_list):
     id = 0
     proc = []
-    for inst,test in sorted(test_list.items()):
-        p = Process(target=testRunInParallel, args=(id, inst, test))
+    for test,ttx in sorted(test_list.items()):
+        p = Process(target=testRunInParallel, args=(id, test, ttx))
         p.start()
         proc.append(p)
         id += 1
     for p in proc:
         p.join()
+
+
+# -------------------------------
 
 
 # -------------------------------
@@ -181,25 +174,27 @@ if __name__ == "__main__":
     # Seed
     seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]
     random.seed(args["seed"])
-    print("> Seed: " + str(seed))
+    print(" (Seed: " + str(seed) + ")")
     
     # STEP 0: Env cleanup
-    print('\n>> STEP 0: Env cleanup')
+    print('\n>> STEP 0: Env cleanup', flush=True)
     env_cleanup()
-
     # STEP 0+: Test list
-    yml       = os.path.join(metadir, "test.yml")
+    cmd = " cd {0} && make gen".format(metadir)
+    #print(cmd)
+    ret = os.system(cmd)
+    yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
     print("> Found tests: \n  " + str(sorted(test_list.keys())))
-  
-    # STEP 1: Source publish
-    print('\n>> STEP 1: Source publish')
-    source_publish(yml)
 
+    # STEP 1: Source publish
+    print('\n>> STEP 1: Source publish', flush=True)
+    source_publish(test_list)
+    
     # STEP 2: VCS compile
-    print('\n>> STEP 2: VCS compile')
+    print('\n>> STEP 2: VCS compile', flush=True)
     vsc_compile()
     
     # STEP 3: VCS run
-    print('\n>> STEP 3: VCS run')
+    print('\n>> STEP 3: VCS run', flush=True)
     vsc_run(test_list)
