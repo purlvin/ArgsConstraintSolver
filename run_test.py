@@ -108,9 +108,8 @@ echo -e "-- STAGE build_test_generator --"
 
 # -------------------------------
 def vsc_compile():
-    os.chdir(tbdir)
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    cmd = "cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
     print(cmd)
     ret = os.system(cmd)
 
@@ -120,8 +119,7 @@ def testRunInParallel(id, test, ttx):
     seed = random.getrandbits(32)
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
-    os.chdir(test_rundir)
-    cmd = "{0}/simv +testdef={1}/{2}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {1}/vcs_run.log".format(simdir, rundir, test, seed, ttx)
+    cmd = "cd {5}; {0}/simv +testdef={1}/{2}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {1}/vcs_run.log".format(simdir, rundir, test, seed, ttx, test_rundir)
     print(cmd)
     ret = os.system(cmd)
 def vsc_run(test_list):
@@ -177,7 +175,7 @@ if __name__ == "__main__":
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
-    print("> Found tests: \n  " + str(sorted(test_list.keys())))
+    print("  Found tests: " + str(sorted(test_list.keys())))
 
     # STEP 1: Source publish
     print('\n [{0:0.2f}] STEP 1: Source publish'.format((time.time()-start_time)), flush=True)

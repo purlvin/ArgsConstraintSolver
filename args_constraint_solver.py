@@ -137,7 +137,7 @@ def gen_solver_sv(sv, spec):
     f.write('    // Disable all constraints by default\n')
     for c,v in spec["constraints"]["class"].items():
         f.write('    // -> class "{0}"\n'.format(c))
-        f.write('    {0} = 0\n'.format("_"+c+"_enable"))
+        f.write('    {0} = 0;\n'.format("_"+c+"_enable"))
         for g in v["constrs"]:
             f.write('    {0}.{1}.constraint_mode(0);\n'.format("_"+c, g))
     #   Enable constraints per testcase and testsuite
@@ -146,7 +146,7 @@ def gen_solver_sv(sv, spec):
     for t,v in spec["tests"]["cases"].items():
         f.write('      "{0}": begin\n'.format(t))
         f.write('        $display("[constraints_solver] Enable test constraint groups: {0}");\n'.format(v))
-        f.write('        {0} = 1\n'.format(v[0].split(".")[0]+"_enable"))
+        f.write('        {0} = 1;\n'.format(v[0].split(".")[0]+"_enable"))
         for g in v:
             f.write('        {0}.constraint_mode(1);\n'.format(g))
         f.write('      end\n')
