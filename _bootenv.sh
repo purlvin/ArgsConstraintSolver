@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 alias bootenv='export ROOT=`git rev-parse --show-toplevel`;'
-alias run_test="$ROOT/src/hardware/tb_tensix/meta/run_test.py";
+function run_test() { mv $ROOT/out $ROOT/out.old && mkdir $ROOT/out && python3 $ROOT/src/hardware/tb_tensix/meta/run_test.py $@ | tee $ROOT/out/run_test.log; }
 
 # Common
 alias h="history"

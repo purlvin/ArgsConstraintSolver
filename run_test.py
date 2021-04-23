@@ -49,7 +49,7 @@ def get_test_list(yml, tgt_test, tgt_group):
 
 # -------------------------------
 def env_cleanup():
-    outdir = "{0}/out".format(root)
+    outdir = "{0}/out.old/out".format(root)
     if os.path.exists(outdir): shutil.rmtree(outdir)
     outdir = "{0}/out".format(testdir)
     if os.path.exists(outdir): shutil.rmtree(outdir)
@@ -127,7 +127,7 @@ def result_report(test_list):
         results[test] = "FAIL"
         log = os.path.join(rundir, test, "vcs_run.log")
         if ("<TEST-PASSED>" in open(log).read()): results[test] = "PASS"
-        print("  [{0}]{1:30}: {2} {3}".format(id, test, results[test], "" if results[test] == "PASS" else "(log: {0})".format(log))) 
+        print("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if results[test] == "PASS" else "(log: {0})".format(log))) 
         id += 1
 
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     ap.add_argument("-s", "--seed", help="Seed")
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "quick"
-    print("<Input Args>")
+    print(" <Input Args>")
     for k,v in args.items():
         if (v): print("  {} : {}".format(k, v))
     
