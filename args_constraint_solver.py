@@ -219,7 +219,8 @@ def gen_solver_sv(sv, spec):
         f.write('    end\n')
     f.write('    $fclose(fd);\n\n')
     #f.write('    cmd = {"make -j8 -C ", getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests TEST_OUT=", GetCwdBaseName()," TEST=", GetTtxName(testname)," GENARGS=\'", cmd, "\' compile_test; ", " ln -sf ",getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests/out/", GetCwdBaseName(), "/", GetTtxName(testname), ".ttx core.ttx"};\n')
-    f.write('    cmd = {getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti/out/ckti --dir=. --test=", GetTtxName(testname)};\n')
+    f.write('    cmd = {"date; ln -sf ", getenv(\"ROOT\"), "/out/pub/fw . && ", getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && cd ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti && out/ckti --dir=", getenv(\"PWD\")," --test=", GetTtxName(testname), "; date;"};\n')
+    
     f.write('    $display("CMD: %s", cmd);\n')
     f.write('    $system(cmd);\n')
     f.write('  endfunction\n')

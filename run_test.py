@@ -77,48 +77,34 @@ cd $ROOT/src/test_ckernels/gen && make -j 64
 cd $ROOT/src/test_ckernels/src && make -j 64
 cd $ROOT/src/t6ifc/vcs-core/tvm_tb && make SIM=vcs -j 64
 echo -e "-- STAGE build_firmware --"
-cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/GRID-1x1
+cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
     for ttx in list(set(test_list["ttx"].values())):
-    	cmd += "cd $ROOT/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR=$ROOT/out/pub/ttx/{ttx} TEST={ttx} generator firmware".format(ttx=ttx)
+    	cmd += "cd $ROOT/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR=$ROOT/out/pub/ttx/{ttx} TEST={ttx} generator firmware\n".format(ttx=ttx)
     sh = os.path.join(pubdir, "tb_build.sh")
     f = open(sh, "w")
     f.write(cmd)
     f.close()
-    print('     -> Building testbench : {0}'.format(sh), flush=True)
-    cmd = "   source {0} &> {1}/publish.log ".format(sh, pubdir)
+    print('  -> Building testbench : {0}'.format(sh), flush=True)
+    cmd = "  source {0} &> {1}/publish.log ".format(sh, pubdir)
     print(cmd, flush=True)
     ret = os.system(cmd)
-
-
-    ## Soft-link metadir
-    #print('     -> Publish source files', flush=True)
-    #for type in ('*.sv', '*.svh'):
-    #    for file in glob.glob(os.path.join(metadir,type)):
-    #        ln_sf(file, os.path.basename(file))
-    # Prebuild libraries
-    #print('     -> Prebuild libraries (tvm_tb.so)', flush=True)
-    ##cmd = " make -C {0}/tvm_tb -j8 SIM=vcs &> publish.log; make -j8 -C {1} TEST_OUT=conv_basic TEST=single-core-conv GENARGS='--inline_halo --conv=3x3s1 --filters=16' compile_test &>> publish.log".format(tbdir, testdir)
-    #cmd = " make -C {0}/tvm_tb -j8 SIM=vcs &> publish.log; ".format(tbdir, testdir)
-    #print(cmd)
-    #ret = os.system(cmd)
-
 
 # -------------------------------
 def vsc_compile():
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
     print(cmd)
     ret = os.system(cmd)
 
 # -------------------------------
 def testRunInParallel(id, test, base, ttx):
-    print('   -> [{}]: VCS run test - {}'.format(id, test))
+    print('  -> [{}]: {}'.format(id, test))
     seed = random.getrandbits(32)
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
-    cmd = "cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx)
+    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx)
     print(cmd)
     ret = os.system(cmd)
 def vsc_run(test_list):
@@ -134,29 +120,27 @@ def vsc_run(test_list):
 
 
 # -------------------------------
+def result_report(test_list):
+    results = {}
+    id = 0
+    for test in sorted(test_list["ttx"].keys()):
+        results[test] = "FAIL"
+        log = os.path.join(rundir, test, "vcs_run.log")
+        if ("<TEST-PASSED>" in open(log).read()): results[test] = "PASS"
+        print("  [{0}]{1:30}: {2} {3}".format(id, test, results[test], "" if results[test] == "PASS" else "(log: {0})".format(log))) 
+        id += 1
 
 
 # -------------------------------
-# Hierarchy:
-#   ROOT
-#     -> out
-#         -> pub
-#           -> constraints_solver.sv
-#           -> test_generator.so?
-#         -> sim
-#           -> design.f
-#         -> run
-#           -> <TEST_x>
-#             -> ttx_args.cfg
-#
 if __name__ == "__main__":
     # Construct the argument parser
     ap = argparse.ArgumentParser()
     ap.add_argument("test", nargs='?', help="Test name")
-    ap.add_argument("-w", "--when", help="When groups nane", default="quick")
+    ap.add_argument("-w", "--when", help="When groups nane")
     ap.add_argument("-s", "--seed", help="Seed")
     args = vars(ap.parse_args())
-    print("> Input Args ")
+    if not (args["test"] or args["when"]): args["when"] = "quick"
+    print("<Input Args>")
     for k,v in args.items():
         if (v): print("  {} : {}".format(k, v))
     
@@ -187,4 +171,8 @@ if __name__ == "__main__":
     # STEP 3: VCS run
     print('\n [{0:0.2f}] STEP 3: VCS run'.format((time.time()-start_time)), flush=True)
     vsc_run(test_list)
+
+    # STEP 4: Result report
+    print('\n [{0:0.2f}] STEP 4: Result report'.format((time.time()-start_time)), flush=True)
+    result_report(test_list)
 
