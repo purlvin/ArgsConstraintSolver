@@ -23,27 +23,28 @@ start_time  = time.time()
 def get_test_list(yml, tgt_test, tgt_group):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
-    tests = {"groups": {}, "ttx": {}}
+    tests = {"groups": {}, "ttx": {}, "basetest": {}}
     for test,test_hash in spec["testcases"].items():
-        tests["ttx"][test] = test_hash["_ttx"] 
+        tests["ttx"][test] = test_hash["_ttx"]
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
     
-    test_list = {}
+    test_list = {"base": {}, "ttx": {}}
     # Generate test list 
     if (tgt_test) :
         if tgt_test not in tests['ttx'].keys(): raise ValueError("Invalid test name '{}'!".format(tgt_test)) 
-        test_list[tgt_test] = tests['ttx'][tgt_test] 
+        test_list["base"][tgt_test] = tgt_test
+        test_list["ttx"][tgt_test]  = tests['ttx'][tgt_test]
     else :
         if tgt_group not in tests['groups']: raise ValueError("Invalid when tag '{}'!".format(tgt_group))
         val = tests['groups'][tgt_group]
         for k,v in val.items():
             for i in range(v):
-                test_list[k+"_"+str(i)] = tests['ttx'][k]
-   
+                test_list["base"][k+"_"+str(i)] = k
+                test_list["ttx"][k+"_"+str(i)]  = tests['ttx'][k]
     return test_list
 
 # -------------------------------
@@ -81,7 +82,7 @@ echo -e "-- STAGE build_firmware --"
 cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/GRID-1x1
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
-    for ttx in list(set(test_list.values())):
+    for ttx in list(set(test_list["ttx"].values())):
     	cmd += "cd $ROOT/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR=$ROOT/out/pub/ttx/{ttx} TEST={ttx} generator firmware".format(ttx=ttx)
     sh = os.path.join(pubdir, "tb_build.sh")
     f = open(sh, "w")
@@ -114,19 +115,19 @@ def vsc_compile():
     ret = os.system(cmd)
 
 # -------------------------------
-def testRunInParallel(id, test, ttx):
+def testRunInParallel(id, test, base, ttx):
     print('   -> [{}]: VCS run test - {}'.format(id, test))
     seed = random.getrandbits(32)
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
-    cmd = "cd {5}; {0}/simv +testdef={1}/{2}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {1}/vcs_run.log".format(simdir, rundir, test, seed, ttx, test_rundir)
+    cmd = "cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx)
     print(cmd)
     ret = os.system(cmd)
 def vsc_run(test_list):
     id = 0
     proc = []
-    for test,ttx in sorted(test_list.items()):
-        p = Process(target=testRunInParallel, args=(id, test, ttx))
+    for test,ttx in sorted(test_list["ttx"].items()):
+        p = Process(target=testRunInParallel, args=(id, test, test_list["base"][test], ttx))
         p.start()
         proc.append(p)
         id += 1
