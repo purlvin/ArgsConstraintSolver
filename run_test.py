@@ -66,8 +66,6 @@ def ln_sf(src, dst):
     #os.symlink(src, dst)
     os.system("ln -f {} {}".format(src, dst))
 def source_publish(test_list):
-    os.chdir(pubdir)
-    
     cmd = '''\
 export ROOT={0}
 echo -e "-- STAGE build_tools --"
@@ -176,7 +174,7 @@ if __name__ == "__main__":
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
-    print("  Found tests: " + str(sorted(test_list.keys())))
+    print("  Found tests: " + str(sorted(test_list["ttx"].keys())))
 
     # STEP 1: Source publish
     print('\n [{0:0.2f}] STEP 1: Source publish'.format((time.time()-start_time)), flush=True)
