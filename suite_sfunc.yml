@@ -4,14 +4,17 @@
 templates:
   __sfunc_t : &__sfunc_t
     <<: *__math_t
+    Description : "Template for math sfunc tests."
     _ttx : single-core-sfunc
     _constr_class : constraints_suite_sfunc
     _constr_grps  : &__sfunc_t__constr_grps
       - *__math_t__constr_grps
       - suite_sfunc_default=1
+    _args  : &__sfunc_t__args
+      - *__math_t__args
+      - +sfunc=1
     _when  : &__sfunc_t__when
       [*__math_t__when, sfunc]
-    Description : "Template for math sfunc tests."
 
 #------------------------------------------------
 # -> Testcases
