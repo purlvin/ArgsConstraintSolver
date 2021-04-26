@@ -1,23 +1,72 @@
 #!/usr/bin/env python3
-import glob, shutil, os
+import glob, shutil, os, sys, signal
 from multiprocessing import Process
 import yaml
 import re
 import argparse
 import random
 import time
+import logging;
+from datetime import datetime
 
 # -------------------------------
 # Path variables
-root    = os.environ.get("ROOT")
-metadir = os.path.join(root,   "src/hardware/tb_tensix/meta")
-testdir = os.path.join(root,   "src/hardware/tb_tensix/tests")
-tbdir   = os.path.join(root,   "src/t6ifc/vcs-core")
-outdir  = os.path.join(root,   "out")
-pubdir  = os.path.join(outdir, "pub")
-simdir  = os.path.join(outdir, "sim")
-rundir  = os.path.join(outdir, "run")
+root        = os.environ.get("ROOT")
+metadir     = os.path.join(root,    "src/hardware/tb_tensix/meta")
+testdir     = os.path.join(root,    "src/hardware/tb_tensix/tests")
+tbdir       = os.path.join(root,    "src/t6ifc/vcs-core")
+outdir      = os.path.join(root,    "out")
+pubdir      = os.path.join(outdir,  "pub")
+simdir      = os.path.join(outdir,  "sim")
+rundir      = os.path.join(outdir,  "run")
 start_time  = time.time()
+logger      = logging.getLogger()
+log         = os.path.join(outdir,  "run_test.log")
+proc        = []
+
+
+# -------------------------------
+class Colors:
+    """ ANSI color codes """
+    BLACK           = "\033[0;30m"
+    RED             = "\033[0;31m"
+    GREEN           = "\033[0;32m"
+    BROWN           = "\033[0;33m"
+    BLUE            = "\033[0;34m"
+    PURPLE          = "\033[0;35m"
+    CYAN            = "\033[0;36m"
+    LIGHT_GRAY      = "\033[0;37m"
+    DARK_GRAY       = "\033[1;30m"
+    LIGHT_RED       = "\033[1;31m"
+    LIGHT_GREEN     = "\033[1;32m"
+    YELLOW          = "\033[1;33m"
+    LIGHT_BLUE      = "\033[1;34m"
+    LIGHT_PURPLE    = "\033[1;35m"
+    LIGHT_CYAN      = "\033[1;36m"
+    LIGHT_WHITE     = "\033[1;37m"
+    BOLD            = "\033[1m"
+    FAINT           = "\033[2m"
+    ITALIC          = "\033[3m"
+    UNDERLINE       = "\033[4m"
+    BLINK           = "\033[5m"
+    NEGATIVE        = "\033[7m"
+    CROSSED         = "\033[9m"
+    END             = "\033[0m"
+class ColorFormatter(logging.Formatter):
+    """Logging Formatter to add colors and count warning / errors"""
+    formatter = "[%(relativeCreated)8.2f] %(levelname)s - %(message)s".format(time.time()-start_time)
+    FORMATS = {
+        logging.DEBUG:      "", 
+        logging.INFO:       Colors.BROWN + formatter + Colors.END,
+        logging.WARNING:    Colors.YELLOW + formatter + Colors.END,
+        logging.ERROR:      Colors.LIGHT_RED + formatter + Colors.END,
+        logging.CRITICAL:   Colors.RED + formatter + Colors.END,
+    }
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        record.relativeCreated /= 1000
+        return formatter.format(record)
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group):
@@ -59,12 +108,7 @@ def env_cleanup():
     os.makedirs(simdir, exist_ok=True)
     os.makedirs(rundir, exist_ok=True)
 
-    
 # -------------------------------
-def ln_sf(src, dst):
-    if os.path.exists(dst): os.remove(dst)
-    #os.symlink(src, dst)
-    os.system("ln -f {} {}".format(src, dst))
 def source_publish(test_list):
     cmd = '''\
 export ROOT={0}
@@ -86,30 +130,29 @@ echo -e "-- STAGE build_test_generator --"
     f = open(sh, "w")
     f.write(cmd)
     f.close()
-    print('  -> Building testbench : {0}'.format(sh), flush=True)
+    logger.debug('  -> Building testbench : {0}'.format(sh))
     cmd = "  source {0} &> {1}/publish.log ".format(sh, pubdir)
-    print(cmd, flush=True)
+    logger.debug(cmd)
     ret = os.system(cmd)
 
 # -------------------------------
 def vsc_compile():
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
-    print(cmd)
+    logger.debug(cmd)
     ret = os.system(cmd)
 
 # -------------------------------
 def testRunInParallel(id, test, base, ttx):
-    print('  -> [{}]: {}'.format(id, test))
+    logger.info('  -> [{}]: {}'.format(id, test))
     seed = random.getrandbits(32)
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
     cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx)
-    print(cmd)
+    logger.debug(cmd)
     ret = os.system(cmd)
 def vsc_run(test_list):
     id = 0
-    proc = []
     for test,ttx in sorted(test_list["ttx"].items()):
         p = Process(target=testRunInParallel, args=(id, test, test_list["base"][test], ttx))
         p.start()
@@ -118,21 +161,30 @@ def vsc_run(test_list):
     for p in proc:
         p.join()
 
-
 # -------------------------------
 def result_report(test_list):
     results = {}
     id = 0
     for test in sorted(test_list["ttx"].keys()):
-        results[test] = "FAIL"
+        results[test] = Colors.RED + "FAIL" + Colors.END
         log = os.path.join(rundir, test, "vcs_run.log")
-        if ("<TEST-PASSED>" in open(log).read()): results[test] = "PASS"
-        print("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if results[test] == "PASS" else "(log: {0})".format(log))) 
+        if ("<TEST-PASSED>" in open(log).read()): results[test] =  Colors.GREEN + "PASS" + Colors.END
+        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(log: {0})".format(log))) 
         id += 1
 
-
 # -------------------------------
-if __name__ == "__main__":
+def signal_handler(sig, frame):
+    for p in proc: p.terminate()
+def main():
+    if os.path.exists(log): shutil.move(log, log+".old")
+    logger.setLevel(logging.DEBUG)
+    fh = logging.FileHandler(log)
+    ch = logging.StreamHandler()
+    fh.setFormatter(logging.Formatter(ColorFormatter.formatter))
+    ch.setFormatter(ColorFormatter())
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
     # Construct the argument parser
     ap = argparse.ArgumentParser()
     ap.add_argument("test", nargs='?', help="Test name")
@@ -140,39 +192,44 @@ if __name__ == "__main__":
     ap.add_argument("-s", "--seed", help="Seed")
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "quick"
-    print(" <Input Args>")
+    logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
-        if (v): print("  {} : {}".format(k, v))
+        if (v): logger.debug("  {} : {}".format(k, v))
     
     # Seed
     seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]
     random.seed(args["seed"])
-    print(" (Seed: " + str(seed) + ")")
+    logger.debug(" (Seed: " + str(seed) + ")")
    
     # STEP 0: Env cleanup
-    print('\n [{0:0.2f}] STEP 0: Env cleanup'.format((time.time()-start_time)), flush=True)
+    logger.info(' STEP 0: Env cleanup')
     env_cleanup()
     # STEP 0+: Test list
     cmd = " cd {0} && make gen".format(metadir)
-    #print(cmd)
+    #logger.info(cmd)
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
-    print("  Found tests: " + str(sorted(test_list["ttx"].keys())))
+    logger.info("  Found tests: " + str(sorted(test_list["ttx"].keys())))
 
     # STEP 1: Source publish
-    print('\n [{0:0.2f}] STEP 1: Source publish'.format((time.time()-start_time)), flush=True)
+    logger.info(' STEP 1: Source publish')
     source_publish(test_list)
     
     # STEP 2: VCS compile
-    print('\n [{0:0.2f}] STEP 2: VCS compile'.format((time.time()-start_time)), flush=True)
+    logger.info(' STEP 2: VCS compile')
     vsc_compile()
-    
+   
     # STEP 3: VCS run
-    print('\n [{0:0.2f}] STEP 3: VCS run'.format((time.time()-start_time)), flush=True)
+    logger.info(' STEP 3: VCS run')
+    signal.signal(signal.SIGINT, signal_handler)
     vsc_run(test_list)
 
     # STEP 4: Result report
-    print('\n [{0:0.2f}] STEP 4: Result report'.format((time.time()-start_time)), flush=True)
+    logger.info(' STEP 4: Result report')
     result_report(test_list)
+
+
+if __name__ == "__main__":
+    main()
 
