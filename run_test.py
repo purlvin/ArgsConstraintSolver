@@ -57,7 +57,7 @@ class ColorFormatter(logging.Formatter):
     formatter = "[%(relativeCreated)8.2f] %(levelname)s - %(message)s".format(time.time()-start_time)
     FORMATS = {
         logging.DEBUG:      "", 
-        logging.INFO:       Colors.BROWN + formatter + Colors.END,
+        logging.INFO:       Colors.BLUE + formatter + Colors.END,
         logging.WARNING:    Colors.YELLOW + formatter + Colors.END,
         logging.ERROR:      Colors.LIGHT_RED + formatter + Colors.END,
         logging.CRITICAL:   Colors.RED + formatter + Colors.END,
@@ -85,12 +85,16 @@ def get_test_list(yml, tgt_test, tgt_group):
     test_list = {"base": {}, "ttx": {}, "args": {}}
     # Generate test list 
     if (tgt_test) :
-        if tgt_test not in tests['ttx'].keys(): raise ValueError("Invalid test name '{}'!".format(tgt_test)) 
+        if tgt_test not in tests['ttx'].keys(): 
+          logger.error("Invalid test name '{}'!".format(tgt_test)) 
+          raise "Die run_test.py!"
         test_list["base"][tgt_test] = tgt_test
         test_list["ttx"][tgt_test]  = tests['ttx'][tgt_test]
         test_list["args"][tgt_test] = tests['args'][tgt_test]
     else :
-        if tgt_group not in tests['groups']: raise ValueError("Invalid when tag '{}'!".format(tgt_group))
+        if tgt_group not in tests['groups']: 
+          logger.error("Invalid when tag '{}'!".format(tgt_group))
+          raise "Die run_test.py!"
         val = tests['groups'][tgt_group]
         for k,v in val.items():
             for i in range(v):
@@ -101,7 +105,7 @@ def get_test_list(yml, tgt_test, tgt_group):
 
 # -------------------------------
 def env_cleanup():
-    outdir = "{0}/out.old/out".format(root)
+    outdir = "{0}/out".format(root)
     if os.path.exists(outdir): shutil.rmtree(outdir)
     outdir = "{0}/out".format(testdir)
     if os.path.exists(outdir): shutil.rmtree(outdir)
@@ -137,13 +141,19 @@ echo -e "-- STAGE build_test_generator --"
     cmd = "  source {0} &> {1}/publish.log ".format(sh, pubdir)
     logger.debug(cmd)
     ret = os.system(cmd)
+    if ret != 0: 
+      logger.error("Source publish failed! \n  CMD: {0}".format(cmd)) 
+      raise "Die run_test.py!"
 
 # -------------------------------
 def vsc_compile():
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
-    logger.debug(cmd)
+    #logger.debug(cmd)
     ret = os.system(cmd)
+    if ret != 0:
+      logger.error("VCS compile failed! \n  CMD: {0}".format(cmd)) 
+      raise "Die run_test.py!"
 
 # -------------------------------
 def testRunInParallel(id, test, base, ttx, args):
@@ -154,9 +164,11 @@ def testRunInParallel(id, test, base, ttx, args):
     cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5}&> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, args)
     logger.debug(cmd)
     ret = os.system(cmd)
-def vsc_run(test_list):
+def vsc_run(test_list, args):
     id = 0
     for test,ttx in sorted(test_list["ttx"].items()):
+        if (args["dump"]):  test_list["args"][test] += " --vcdfile=waveform.vcd"
+        if (args["debug"]): test_list["args"][test] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         p = Process(target=testRunInParallel, args=(id, test, test_list["base"][test], ttx, test_list["args"][test]))
         p.start()
         proc.append(p)
@@ -170,18 +182,19 @@ def result_report(test_list):
     id = 0
     for test in sorted(test_list["ttx"].keys()):
         results[test] = Colors.RED + "FAIL" + Colors.END
-        log = os.path.join(rundir, test, "vcs_run.log")
-        if ("<TEST-PASSED>" in open(log).read()): results[test] =  Colors.GREEN + "PASS" + Colors.END
-        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(log: {0})".format(log))) 
+        run_log = os.path.join(rundir, test, "vcs_run.log")
+        if ("<TEST-PASSED>" in open(run_log).read()): results[test] =  Colors.GREEN + "PASS" + Colors.END
+        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(run_log: {0})".format(log))) 
         id += 1
 
 # -------------------------------
 def signal_handler(sig, frame):
     for p in proc: p.terminate()
 def main():
+    os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
     logger.setLevel(logging.DEBUG)
-    fh = logging.FileHandler(log)
+    fh = logging.FileHandler(log, mode="w", encoding=None, delay=False)
     ch = logging.StreamHandler()
     fh.setFormatter(logging.Formatter(ColorFormatter.formatter))
     ch.setFormatter(ColorFormatter())
@@ -193,8 +206,11 @@ def main():
     ap.add_argument("test", nargs='?', help="Test name")
     ap.add_argument("-w", "--when", help="When groups nane")
     ap.add_argument("-s", "--seed", help="Seed")
+    ap.add_argument("-dbg", "--debug", action="store_true", help="Simplify TTX data")
+    ap.add_argument("-dp", "--dump", action="store_true", help="Dump FSDB waveform")
+    ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
     args = vars(ap.parse_args())
-    if not (args["test"] or args["when"]): args["when"] = "quick"
+    if not (args["test"] or args["when"]): args["when"] = "sanity"
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
@@ -205,10 +221,11 @@ def main():
     logger.debug(" (Seed: " + str(seed) + ")")
    
     # STEP 0: Env cleanup
-    logger.info(' STEP 0: Env cleanup')
-    env_cleanup()
+    if (not args["j_sim_build"]):
+      logger.info(' STEP 0: Env cleanup')
+      env_cleanup()
     # STEP 0+: Test list
-    cmd = " cd {0} && make gen".format(metadir)
+    cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
     #logger.info(cmd)
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
@@ -216,8 +233,9 @@ def main():
     logger.info("  Found tests: " + str(sorted(test_list["ttx"].keys())))
 
     # STEP 1: Source publish
-    logger.info(' STEP 1: Source publish')
-    source_publish(test_list)
+    if (not args["j_sim_build"]):
+      logger.info(' STEP 1: Source publish')
+      source_publish(test_list)
     
     # STEP 2: VCS compile
     logger.info(' STEP 2: VCS compile')
@@ -226,7 +244,7 @@ def main():
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
     signal.signal(signal.SIGINT, signal_handler)
-    vsc_run(test_list)
+    vsc_run(test_list, args)
 
     # STEP 4: Result report
     logger.info(' STEP 4: Result report')

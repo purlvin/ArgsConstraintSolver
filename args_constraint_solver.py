@@ -22,6 +22,7 @@ def get_test_spec(yml, outdir):
         svh = os.path.join(os.path.dirname(yml),svh)
         if not os.path.exists(svh): raise ValueError("Constraint file '{0}' for {1} is missing!".format(svh, os.path.basename(inc.replace(".yml","")))) 
         for line in open(svh).readlines():
+            if (re.match(r'^\s*//', line)): continue
             # Class
             m = re.match(r'.*class\s*(.*)\s*;.*', line)
             if (m):
@@ -118,7 +119,7 @@ def get_test_spec(yml, outdir):
     return spec
 
 
-def gen_solver_sv(sv, spec):
+def gen_solver_sv(sv, spec, debug):
     f = open(sv, "w")
     # include
     for inc in spec["constraints"]["file"]:
@@ -161,12 +162,15 @@ def gen_solver_sv(sv, spec):
     f.write('  function RandomizeConstrs();\n')
     for c in spec["constraints"]["class"]:
         f.write('    // -> {0}\n'.format(c))
-        f.write('    {0}.randomize();\n'.format("_"+c))
+        f.write('    if ({0}) begin\n'.format("_"+c+"_enable"))
+        f.write('      assert ({0}.randomize()) else $error("sv randomization failed!");\n'.format("_"+c))
+        f.write('    end\n')
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
     f.write('  function string GetCwdBaseName();\n')
-    f.write('    string arr[$] = SplitStr(getenv("PWD"), "/");\n')
+    f.write('    string arr[$];\n')
+    f.write('    arr = SplitStr(getenv("PWD"), "/");\n')
     f.write('    return arr[arr.size()-1];\n')
     f.write('  endfunction\n')
     f.write('  typedef string string_arr[$];\n')
@@ -180,6 +184,7 @@ def gen_solver_sv(sv, spec):
     f.write('        j = i+1;\n')
     f.write('      end\n')
     f.write('    end\n')
+    f.write('    if (j==0) j -= sep.len() - 1;\n')
     f.write('    list.push_back(src.substr(j+sep.len()-1, src.len()-1));\n')
     f.write('    return list;\n')
     f.write('  endfunction\n')
@@ -193,7 +198,7 @@ def gen_solver_sv(sv, spec):
     f.write('  endfunction\n')
     f.write('  // Function: GenArgs\n')
     f.write('  function GenArgs(input string testname);\n')
-    f.write('    int fd;\n')
+    f.write('    int fd, ret;\n')
     f.write('    string args, val, cmd;\n')
     f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
     f.write('    cmd = "";\n')
@@ -204,11 +209,15 @@ def gen_solver_sv(sv, spec):
             var = "_" + c + "." + v
             f.write('      //  ->> {0};\n'.format(v))
             f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var))
-            if (t == "integer"):
+            if (t in ["integer"]):
                 f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
+            elif ("e_int_x" in t):
+                div = t.replace("e_int_x", "") + ".00"
+                f.write('        $sformat(args, "--{1}=%-0.2f", {0}/{2});\n'.format(var, v, div))
             else:
-                f.write('        string arr[$] = SplitStr({0}.name(), "__");\n'.format(var))
-                f.write('        val = arr[1];\n'.format(var))
+                f.write('        string arr[$];\n'.format(var))
+                f.write('        arr = SplitStr({0}.name(), "__");\n'.format(var))
+                f.write('        val = arr[arr.size()-1];\n'.format(var))
                 f.write('        if (val == "EN")\n')
                 f.write('          $sformat(args, "--{0}");\n'.format(v))
                 f.write('        else\n')
@@ -216,13 +225,16 @@ def gen_solver_sv(sv, spec):
             f.write('        cmd = {cmd, " ", args};\n')
             f.write('        $fdisplay(fd, "%s", args);\n')
             f.write('      end\n')
+        if (int(debug) == 1): 
+            f.write('      cmd = {cmd, " --debug"};\n')
+            f.write('      $fdisplay(fd, "%s", "--debug");\n')
         f.write('    end\n')
     f.write('    $fclose(fd);\n\n')
-    #f.write('    cmd = {"make -j8 -C ", getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests TEST_OUT=", GetCwdBaseName()," TEST=", GetTtxName(testname)," GENARGS=\'", cmd, "\' compile_test; ", " ln -sf ",getenv(\"ROOT\"), "/src/hardware/tb_tensix/tests/out/", GetCwdBaseName(), "/", GetTtxName(testname), ".ttx core.ttx"};\n')
     f.write('    cmd = {"date; ln -sf ", getenv(\"ROOT\"), "/out/pub/fw . && ", getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && cd ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti && out/ckti --dir=", getenv(\"PWD\")," --test=", GetTtxName(testname), "; date;"};\n')
     
     f.write('    $display("CMD: %s", cmd);\n')
-    f.write('    $system(cmd);\n')
+    f.write('    ret = $system(cmd);\n')
+    f.write('    $display("RET: %d", ret);\n')
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
@@ -257,13 +269,57 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("-y", "--yml", help="Input yaml file")
     ap.add_argument("-o", "--out", help="Output constraint SV file")
+    ap.add_argument("-dbg", "--debug", help="Simplify TTX data")
     args = vars(ap.parse_args())
-    #print("> Input Args ")
-    #for k,v in args.items():
-    #    if (v): print("  {} : {}".format(k, v))
+    print("> Input Args ")
+    for k,v in args.items():
+        if (v): print("  {} : {}".format(k, v))
 
     # Generate constranint systemveilog module
     spec = get_test_spec(args["yml"], os.path.dirname(args["out"]))
     #print("\nSpec: \n", spec)
-    gen_solver_sv(args["out"], spec)
+    gen_solver_sv(args["out"], spec, args["debug"])
 
+
+
+#/*
+#  1) not print or feed into ttx (P1)
+#  typedef integer e_int_local;
+#  rand e_int_local   abc;
+#
+#   -> workaround currently dv test limitation (only 1 c testcase file) 
+#
+#
+#  2) supporting array of integer (P2)
+#  typedef integer   e_int_coordinate;
+#  rand e_int_coordinate coor[4];
+#  print out as coor=coor[3],coor[2],coor[1],coor[0]
+#
+#   -> workaround currently ttx generator format 
+#
+#
+#  3) support more than 32 bits (P4)
+#  typedef integer   e_int_ext;
+#  rand e_int_ext  long_int[2];
+#  print out as long_int=long_int[1]_long_int[0]
+#
+#
+#  4) for e_bool, either print it or not print it , witout the value (P1)
+#  typedef bit       e_switch;            
+#  rand e_switch     cde;
+#
+#  instead of 
+#       (xxx==e_bool__EN) -> (yyy===`INTEGER__DIS);
+#  can code it like this
+#       xxx -> !yyy ;
+#
+#   -> workaround currently ttx generator format 
+#   -> instead of fixing ttx, add exception case 
+#
+#
+#   5) plusarg randomization support
+#      * list of plusarg & range
+#      * runtime constraint is resolved in runtime (not pregen)
+#      * how to parse (madeusa / sys_mgtr
+#*/
+#
