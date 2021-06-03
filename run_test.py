@@ -206,15 +206,18 @@ def main():
     ap.add_argument("test", nargs='?', help="Test name")
     ap.add_argument("-w", "--when", help="When groups nane")
     ap.add_argument("-s", "--seed", help="Seed")
+    ap.add_argument("-clean", "--clean", help="Remove out directories")
     ap.add_argument("-dbg", "--debug", action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp", "--dump", action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
+    ap.add_argument("-jsr", "--j_sim_run", action="store_true", help="Jump to sim run")
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "sanity"
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
-    
+    if args["j_sim_run"] : args["j_sim_build"] = true
+
     # Seed
     seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]
     random.seed(args["seed"])
@@ -223,14 +226,15 @@ def main():
     # STEP 0: Env cleanup
     if (not args["j_sim_build"]):
       logger.info(' STEP 0: Env cleanup')
-      env_cleanup()
+      if (args["clean"]):
+        env_cleanup()
     # STEP 0+: Test list
     cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
     #logger.info(cmd)
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"])
-    logger.info("  Found tests: " + str(sorted(test_list["ttx"].keys())))
+    logger.info(" Found tests: " + str(sorted(test_list["ttx"].keys())))
 
     # STEP 1: Source publish
     if (not args["j_sim_build"]):
@@ -238,8 +242,9 @@ def main():
       source_publish(test_list)
     
     # STEP 2: VCS compile
-    logger.info(' STEP 2: VCS compile')
-    vsc_compile()
+    if (not args["j_sim_run"]):
+      logger.info(' STEP 2: VCS compile')
+      vsc_compile()
    
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
