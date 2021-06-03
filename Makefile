@@ -7,7 +7,7 @@ gen: args_constraint_solver.py
 	mkdir -p $(ROOT)/out/pub
 	mkdir -p $(ROOT)/out/sim
 	mkdir -p $(ROOT)/out/run
-	python3 args_constraint_solver.py --yml=test.yml --out=$(CONSTRAINTS_SOLVER)
+	python3 args_constraint_solver.py --yml=test.yml --out=$(CONSTRAINTS_SOLVER) --debug=0
 	$(foreach svh, $(wildcard *.svh), ln -sf ${CURDIR}/${svh} $(ROOT)/out/pub/${svh};)
 	#printf "$(CONSTRAINTS_SOLVER) $(SUCCESS_STRING)\n" | $(PRETTY_2_COL)
 

@@ -8,6 +8,14 @@ class constraints_suite_conv extends constraints_global;
   rand e_conv       conv;
   rand integer      filters;
   
+  typedef integer e_int_local;
+  rand e_int_local   abc;
+  typedef bit       e_switch;            
+  rand e_switch     cde;
+  typedef integer   e_int_coordinate;
+  rand e_int_coordinate coor[4];
+
+
   // Test suite default constraints
   constraint suite_conv_default {
     filters   inside {`INTEGER__DIS,  8, 16, 32};

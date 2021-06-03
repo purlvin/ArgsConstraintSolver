@@ -34,9 +34,15 @@ def get_test_spec(yml, outdir):
                     orig = None
                 constraints["class"][class_name] = {"orig": orig, "vars": {}, "constrs": []}
             # Class - variables
-            m = re.match(r'.*rand\s*(\w+)\s*(\w+)\s*;.*', line)
+            m = re.match(r'.*rand\s*(\w+)\s*(.+)\s*;.*', line)
             if (m):
+                n    = 1
                 k, v = m.groups()
+                m = re.match(r'(\w+)\s*\[(\d+)\]', v)
+                if (m):
+                    v, n = m.groups()
+                k = "{0}:{1}".format(k,n)
+                if (k == "e_int_local") : continue
                 constraints["class"][class_name]["vars"][v] = k
             # Constraint
             m = re.match(r'.*constraint\s*(\w+)\s*{.*', line)
@@ -207,23 +213,37 @@ def gen_solver_sv(sv, spec, debug):
         f.write('    if (_{0}_enable) begin\n'.format(c))
         for v,t in spec["constraints"]["class"][c]["vars"].items():
             var = "_" + c + "." + v
+            t,n = t.split(":")
             f.write('      //  ->> {0};\n'.format(v))
-            f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var))
-            if (t in ["integer"]):
-                f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
-            elif ("e_int_x" in t):
-                div = t.replace("e_int_x", "") + ".00"
-                f.write('        $sformat(args, "--{1}=%-0.2f", {0}/{2});\n'.format(var, v, div))
+            if ("e_switch" in t):
+                f.write('      if ({0})\n'.format(var))
+                f.write('        $sformat(args, "--{0}");\n'.format(v))
+                f.write('        cmd = {cmd, " ", args};\n')
+                f.write('        $fdisplay(fd, "%s", args);\n')
             else:
-                f.write('        string arr[$];\n'.format(var))
-                f.write('        arr = SplitStr({0}.name(), "__");\n'.format(var))
-                f.write('        val = arr[arr.size()-1];\n'.format(var))
-                f.write('        if (val == "EN")\n')
-                f.write('          $sformat(args, "--{0}");\n'.format(v))
-                f.write('        else\n')
-                f.write('          $sformat(args, "--{0}=%-0s", val);\n'.format(v))
-            f.write('        cmd = {cmd, " ", args};\n')
-            f.write('        $fdisplay(fd, "%s", args);\n')
+                f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var))
+                if (t in ["integer"]):
+                    f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
+                elif ("e_int_x" in t):
+                    div = t.replace("e_int_x", "") + ".00"
+                    f.write('        $sformat(args, "--{1}=%-0.2f", {0}/{2});\n'.format(var, v, div))
+                elif ("e_int_coordinate" in t):
+                    a1 = []
+                    a2 = []
+                    for i in reversed(range(int(n))):
+                        a1.append("%d") 
+                        a2.append("{}[{}]".format(var,i)) 
+                    f.write('        $sformat(args, "--{0}={1}", {2});\n'.format(v, ",".join(a1), ",".join(a2)))
+                else:
+                    f.write('        string arr[$];\n'.format(var))
+                    f.write('        arr = SplitStr({0}.name(), "__");\n'.format(var))
+                    f.write('        val = arr[arr.size()-1];\n'.format(var))
+                    f.write('        if (val == "EN")\n')
+                    f.write('          $sformat(args, "--{0}");\n'.format(v))
+                    f.write('        else\n')
+                    f.write('          $sformat(args, "--{0}=%-0s", val);\n'.format(v))
+                f.write('        cmd = {cmd, " ", args};\n')
+                f.write('        $fdisplay(fd, "%s", args);\n')
             f.write('      end\n')
         if (int(debug) == 1): 
             f.write('      cmd = {cmd, " --debug"};\n')
@@ -280,46 +300,3 @@ if __name__ == "__main__":
     #print("\nSpec: \n", spec)
     gen_solver_sv(args["out"], spec, args["debug"])
 
-
-
-#/*
-#  1) not print or feed into ttx (P1)
-#  typedef integer e_int_local;
-#  rand e_int_local   abc;
-#
-#   -> workaround currently dv test limitation (only 1 c testcase file) 
-#
-#
-#  2) supporting array of integer (P2)
-#  typedef integer   e_int_coordinate;
-#  rand e_int_coordinate coor[4];
-#  print out as coor=coor[3],coor[2],coor[1],coor[0]
-#
-#   -> workaround currently ttx generator format 
-#
-#
-#  3) support more than 32 bits (P4)
-#  typedef integer   e_int_ext;
-#  rand e_int_ext  long_int[2];
-#  print out as long_int=long_int[1]_long_int[0]
-#
-#
-#  4) for e_bool, either print it or not print it , witout the value (P1)
-#  typedef bit       e_switch;            
-#  rand e_switch     cde;
-#
-#  instead of 
-#       (xxx==e_bool__EN) -> (yyy===`INTEGER__DIS);
-#  can code it like this
-#       xxx -> !yyy ;
-#
-#   -> workaround currently ttx generator format 
-#   -> instead of fixing ttx, add exception case 
-#
-#
-#   5) plusarg randomization support
-#      * list of plusarg & range
-#      * runtime constraint is resolved in runtime (not pregen)
-#      * how to parse (madeusa / sys_mgtr
-#*/
-#

@@ -106,14 +106,14 @@ def get_test_list(yml, tgt_test, tgt_group):
 # -------------------------------
 def env_cleanup():
     outdir = "{0}/out".format(root)
-    if os.path.exists(outdir): shutil.rmtree(outdir)
+    for d in ['pub', 'sim', 'run']:
+        dir =  os.path.join(outdir, d)
+        if os.path.exists(dir): shutil.rmtree(dir)
+        os.makedirs(dir, exist_ok=True)
     outdir = "{0}/out".format(testdir)
     if os.path.exists(outdir): shutil.rmtree(outdir)
     outdir = "{0}/tvm_tb/out".format(tbdir)
     if os.path.exists(outdir): shutil.rmtree(outdir)
-    os.makedirs(pubdir, exist_ok=True)
-    os.makedirs(simdir, exist_ok=True)
-    os.makedirs(rundir, exist_ok=True)
 
 # -------------------------------
 def source_publish(test_list):
