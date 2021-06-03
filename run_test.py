@@ -184,7 +184,7 @@ def result_report(test_list):
         results[test] = Colors.RED + "FAIL" + Colors.END
         run_log = os.path.join(rundir, test, "vcs_run.log")
         if ("<TEST-PASSED>" in open(run_log).read()): results[test] =  Colors.GREEN + "PASS" + Colors.END
-        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(run_log: {0})".format(log))) 
+        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(run_log: {0})".format(run_log))) 
         id += 1
 
 # -------------------------------
@@ -206,7 +206,7 @@ def main():
     ap.add_argument("test", nargs='?', help="Test name")
     ap.add_argument("-w", "--when", help="When groups nane")
     ap.add_argument("-s", "--seed", help="Seed")
-    ap.add_argument("-clean", "--clean", help="Remove out directories")
+    ap.add_argument("-clean", "--clean",  action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug", action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp", "--dump", action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
@@ -216,7 +216,7 @@ def main():
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
-    if args["j_sim_run"] : args["j_sim_build"] = true
+    if args["j_sim_run"] : args["j_sim_build"] = True
 
     # Seed
     seed = random.getrandbits(32) if (not args["seed"]) else args["seed"]

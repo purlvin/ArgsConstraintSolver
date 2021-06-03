@@ -41,8 +41,8 @@ def get_test_spec(yml, outdir):
                 m = re.match(r'(\w+)\s*\[(\d+)\]', v)
                 if (m):
                     v, n = m.groups()
-                k = "{0}:{1}".format(k,n)
                 if (k == "e_int_local") : continue
+                k = "{0}:{1}".format(k,n)
                 constraints["class"][class_name]["vars"][v] = k
             # Constraint
             m = re.match(r'.*constraint\s*(\w+)\s*{.*', line)
@@ -216,12 +216,12 @@ def gen_solver_sv(sv, spec, debug):
             t,n = t.split(":")
             f.write('      //  ->> {0};\n'.format(v))
             if ("e_switch" in t):
-                f.write('      if ({0})\n'.format(var))
+                f.write('      if ({0}) begin\n'.format(var))
                 f.write('        $sformat(args, "--{0}");\n'.format(v))
                 f.write('        cmd = {cmd, " ", args};\n')
                 f.write('        $fdisplay(fd, "%s", args);\n')
             else:
-                f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var))
+                f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var if (int(n)==1) else var + "[0]"))
                 if (t in ["integer"]):
                     f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
                 elif ("e_int_x" in t):
@@ -231,7 +231,7 @@ def gen_solver_sv(sv, spec, debug):
                     a1 = []
                     a2 = []
                     for i in reversed(range(int(n))):
-                        a1.append("%d") 
+                        a1.append("%0d") 
                         a2.append("{}[{}]".format(var,i)) 
                     f.write('        $sformat(args, "--{0}={1}", {2});\n'.format(v, ",".join(a1), ",".join(a2)))
                 else:
