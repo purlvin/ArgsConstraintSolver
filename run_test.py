@@ -18,6 +18,7 @@ tbdir       = os.path.join(root,    "src/t6ifc/vcs-core")
 outdir      = os.path.join(root,    "out")
 pubdir      = os.path.join(outdir,  "pub")
 simdir      = os.path.join(outdir,  "sim")
+simdir_stg1 = os.path.join(simdir,  "stg1")
 rundir      = os.path.join(outdir,  "run")
 start_time  = time.time()
 logger      = logging.getLogger()
@@ -69,7 +70,7 @@ class ColorFormatter(logging.Formatter):
         return formatter.format(record)
 
 # -------------------------------
-def get_test_list(yml, tgt_test, tgt_group):
+def get_test_list(yml, tgt_test, tgt_group, tgt_args):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
     tests = {"groups": {}, "ttx": {}, "args": {}}
@@ -77,11 +78,10 @@ def get_test_list(yml, tgt_test, tgt_group):
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
         tests["ttx"][test]  = test_hash["_ttx"]
-        tests["args"][test] = " ".join(flatten_list(test_hash["_args"]))
+        tests["args"][test] = flatten_list(test_hash["_args"]) + tgt_args
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
-    
     test_list = {"base": {}, "ttx": {}, "args": {}}
     # Generate test list 
     if (tgt_test) :
@@ -106,8 +106,7 @@ def get_test_list(yml, tgt_test, tgt_group):
 # -------------------------------
 def env_cleanup():
     outdir = "{0}/out".format(root)
-    for d in ['pub', 'sim', 'run']:
-        dir =  os.path.join(outdir, d)
+    for dir in [pubdir, simdir, simdir_stg1, rundir]:
         if os.path.exists(dir): shutil.rmtree(dir)
         os.makedirs(dir, exist_ok=True)
     outdir = "{0}/out".format(testdir)
@@ -147,23 +146,69 @@ echo -e "-- STAGE build_test_generator --"
 
 # -------------------------------
 def vsc_compile():
+    # Stage 1 VCS compile
+    logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} {2} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
-    #logger.debug(cmd)
+    cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {0}/vcs_compile.log".format(simdir_stg1, tbdir, pubdir, sv)
     ret = os.system(cmd)
     if ret != 0:
-      logger.error("VCS compile failed! \n  CMD: {0}".format(cmd)) 
+      logger.error("Stage 1 VCS compile failed! \n  CMD: {0}".format(cmd)) 
+      raise "Die run_test.py!"
+    # Stage 2 VCS compile
+    logger.info('   --> Stage 2 VCS compile')
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    ret = os.system(cmd)
+    if ret != 0:
+      logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       raise "Die run_test.py!"
 
 # -------------------------------
 def testRunInParallel(id, test, base, ttx, args):
     logger.info('  -> [{}]: {}'.format(id, test))
+    cfg_args = {}
+    cfg_hash = {}
     seed = random.getrandbits(32)
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
-    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5}&> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, args)
+    # Stage 1 VCS run
+    logger.info('   --> Stage 1 VCS run')
+    cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {0}/stg1_vcs_run.log".format(test_rundir, simdir_stg1, base, seed)
     logger.debug(cmd)
     ret = os.system(cmd)
+    if ret != 0:
+      logger.error(" [{}]: {} : Stage 1 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
+      raise "Die run_test.py!"
+    for x in ["genargs", "plusargs"] :
+        cfg = os.path.join(test_rundir, x + ".cfg")
+        f = open(cfg, "r")
+        cfg_args[x] = f.read().strip().split("\n")
+        cfg_hash[x] = {}
+    cfg_args["plusargs"] += args
+    for k,v in cfg_args.items():
+        k = k.split(".")[0]
+        for x in v:
+            a = x.split("=")
+            cfg_hash[k][a[0]] = a[1] if len(a)>1 else None
+        cfg_args[k] = ""
+        for kk,vv in cfg_hash[k].items():
+            cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
+    # TTX generation
+    logger.info('   --> TTX generation')
+    cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} && {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2}  &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
+    logger.debug(cmd)
+    ret = os.system(cmd)
+    if ret != 0:
+      logger.error(" [{}]: {} : TTX generation failed! \n  CMD: {0}".format(id, test, cmd)) 
+      raise "Die run_test.py!"
+    # Stage 2 VCS run
+    logger.info('   --> Stage 2 VCS run')
+    args = merge_sim_run_args(args["args"], test_list["args"][test])
+    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5}&> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"])
+    logger.debug(cmd)
+    ret = os.system(cmd)
+    if ret != 0:
+      logger.error(" [{}]: {} : Stage 2 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
+      raise "Die run_test.py!"
 def vsc_run(test_list, args):
     id = 0
     for test,ttx in sorted(test_list["ttx"].items()):
@@ -203,14 +248,15 @@ def main():
 
     # Construct the argument parser
     ap = argparse.ArgumentParser()
-    ap.add_argument("test", nargs='?', help="Test name")
-    ap.add_argument("-w", "--when", help="When groups nane")
-    ap.add_argument("-s", "--seed", help="Seed")
-    ap.add_argument("-clean", "--clean",  action="store_true", help="Remove out directories")
-    ap.add_argument("-dbg", "--debug", action="store_true", help="Simplify TTX data")
-    ap.add_argument("-dp", "--dump", action="store_true", help="Dump FSDB waveform")
+    ap.add_argument("test", nargs='?',       help="Test name")
+    ap.add_argument("-w",   "--when",        help="When groups nane")
+    ap.add_argument("-s",   "--seed",        help="Seed")
+    ap.add_argument('-a',   '--args',        type=str, nargs='*', default=[], help="Sim run args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
+    ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
+    ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
+    ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
-    ap.add_argument("-jsr", "--j_sim_run", action="store_true", help="Jump to sim run")
+    ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "sanity"
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
@@ -225,15 +271,14 @@ def main():
    
     # STEP 0: Env cleanup
     if (not args["j_sim_build"]):
-      logger.info(' STEP 0: Env cleanup')
       if (args["clean"]):
+        logger.info(' STEP 0: Env cleanup')
         env_cleanup()
     # STEP 0+: Test list
     cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
-    #logger.info(cmd)
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
-    test_list = get_test_list(yml, args["test"], args["when"])
+    test_list = get_test_list(yml, args["test"], args["when"], args["args"])
     logger.info(" Found tests: " + str(sorted(test_list["ttx"].keys())))
 
     # STEP 1: Source publish

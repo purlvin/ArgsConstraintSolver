@@ -131,9 +131,8 @@ def gen_solver_sv(sv, spec, debug):
     for inc in spec["constraints"]["file"]:
         f.write('`include "{0}"\n'.format(inc))
     # program
-    f.write('\nimport "DPI-C" function string getenv(input string env_name);\n')
-    f.write('\nmodule ttx_generator;\n')
-    for c,v in spec["constraints"]["class"].items():
+    f.write('\nmodule constraints_solver;\n')
+    for c,v in sorted(spec["constraints"]["class"].items()):
         f.write('  {0:28} {1:>25} = new();\n'.format(c, "_"+c))
         f.write('  {0:28} {1:>25};\n'.format("logic", "_"+c+"_enable"))
     
@@ -142,7 +141,7 @@ def gen_solver_sv(sv, spec, debug):
     f.write('  function ConfigConstrGrps(input string testname);\n')
     #   Disable all constraints by default
     f.write('    // Disable all constraints by default\n')
-    for c,v in spec["constraints"]["class"].items():
+    for c,v in sorted(spec["constraints"]["class"].items()):
         f.write('    // -> class "{0}"\n'.format(c))
         f.write('    {0} = 0;\n'.format("_"+c+"_enable"))
         for g in v["constrs"]:
@@ -150,7 +149,7 @@ def gen_solver_sv(sv, spec, debug):
     #   Enable constraints per testcase and testsuite
     f.write('\n    // Enable constraints per testcase and testsuite\n')
     f.write('    case (testname)\n')
-    for t,v in spec["tests"]["cases"].items():
+    for t,v in sorted(spec["tests"]["cases"].items()):
         f.write('      "{0}": begin\n'.format(t))
         f.write('        $display("[constraints_solver] Enable test constraint groups: {0}");\n'.format(v))
         f.write('        {0} = 1;\n'.format(v[0].split(".")[0]+"_enable"))
@@ -174,11 +173,6 @@ def gen_solver_sv(sv, spec, debug):
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
-    f.write('  function string GetCwdBaseName();\n')
-    f.write('    string arr[$];\n')
-    f.write('    arr = SplitStr(getenv("PWD"), "/");\n')
-    f.write('    return arr[arr.size()-1];\n')
-    f.write('  endfunction\n')
     f.write('  typedef string string_arr[$];\n')
     f.write('  function string_arr SplitStr(string src, string sep);\n')
     f.write('    string list[$];\n')
@@ -194,72 +188,70 @@ def gen_solver_sv(sv, spec, debug):
     f.write('    list.push_back(src.substr(j+sep.len()-1, src.len()-1));\n')
     f.write('    return list;\n')
     f.write('  endfunction\n')
-    f.write('  function string GetTtxName(input string testname);\n')
-    f.write('    string ret = "UNKNOWN";\n')
-    f.write('    case(testname)\n')
-    for t,v in spec["tests"]["ttx"].items():
-        f.write('      "{0}": ret = "{1}";\n'.format(t, v))
-    f.write('    endcase\n')
-    f.write('    return ret;\n')
-    f.write('  endfunction\n')
     f.write('  // Function: GenArgs\n')
     f.write('  function GenArgs(input string testname);\n')
-    f.write('    int fd, ret;\n')
-    f.write('    string args, val, cmd;\n')
-    f.write('    fd = $fopen("ttx_args.cfg", "w");\n')
-    f.write('    cmd = "";\n')
+    f.write('    int fd_genargs, fd_plusargs, ret;\n')
+    f.write('    string args, val, cmd;\n\n')
+    f.write('    cmd          = "";\n')
+    f.write('    fd_genargs   = $fopen("genargs.cfg", "w");\n')
+    f.write('    fd_plusargs = $fopen("plusargs.cfg", "w");\n')
     for c in spec["constraints"]["class"]:
         f.write('\n    // -> Class {0}\n'.format(c))
         f.write('    if (_{0}_enable) begin\n'.format(c))
-        for v,t in spec["constraints"]["class"][c]["vars"].items():
+        for v,t in sorted(spec["constraints"]["class"][c]["vars"].items()):
             var = "_" + c + "." + v
             t,n = t.split(":")
             f.write('      //  ->> {0};\n'.format(v))
+            fd     = "fd_genargs"
+            prefix = "--"
+            m = re.match(r'^PLUSARGS__(.+)', v)
+            if (m) :
+                fd     = "fd_plusargs" 
+                prefix = "+"
+                v      = m.group(1)
             if ("e_switch" in t):
                 f.write('      if ({0}) begin\n'.format(var))
-                f.write('        $sformat(args, "--{0}");\n'.format(v))
+                f.write('        $sformat(args, "{0}{1}");\n'.format(prefix, v))
                 f.write('        cmd = {cmd, " ", args};\n')
-                f.write('        $fdisplay(fd, "%s", args);\n')
+                f.write('        $fdisplay({0}, "%s", args);\n'.format(fd))
             else:
                 f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var if (int(n)==1) else var + "[0]"))
                 if (t in ["integer"]):
-                    f.write('        $sformat(args, "--{1}=%-0d", {0});\n'.format(var, v))
+                    f.write('        $sformat(args, "{0}{1}=%0d", {2});\n'.format(prefix, v, var))
+                elif ("e_int_hex" in t):
+                    f.write('        $sformat(args, "{0}{1}=0x%0x", {2});\n'.format(prefix, v, var))
                 elif ("e_int_x" in t):
                     div = t.replace("e_int_x", "") + ".00"
-                    f.write('        $sformat(args, "--{1}=%-0.2f", {0}/{2});\n'.format(var, v, div))
+                    f.write('        $sformat(args, "{0}{1}=%0.2f", {2}/{3});\n'.format(prefix, v, var, div))
                 elif ("e_int_coordinate" in t):
                     a1 = []
                     a2 = []
                     for i in reversed(range(int(n))):
                         a1.append("%0d") 
                         a2.append("{}[{}]".format(var,i)) 
-                    f.write('        $sformat(args, "--{0}={1}", {2});\n'.format(v, ",".join(a1), ",".join(a2)))
+                    f.write('        $sformat(args, "{0}{1}={2}", {3});\n'.format(prefix, v, ",".join(a1), ",".join(a2)))
                 else:
                     f.write('        string arr[$];\n'.format(var))
                     f.write('        arr = SplitStr({0}.name(), "__");\n'.format(var))
                     f.write('        val = arr[arr.size()-1];\n'.format(var))
                     f.write('        if (val == "EN")\n')
-                    f.write('          $sformat(args, "--{0}");\n'.format(v))
+                    f.write('          $sformat(args, "{0}{1}");\n'.format(prefix, v))
                     f.write('        else\n')
-                    f.write('          $sformat(args, "--{0}=%-0s", val);\n'.format(v))
+                    f.write('          $sformat(args, "{0}{1}=%0s", val);\n'.format(prefix, v))
                 f.write('        cmd = {cmd, " ", args};\n')
-                f.write('        $fdisplay(fd, "%s", args);\n')
+                f.write('        $fdisplay({0}, "%s", args);\n'.format(fd))
             f.write('      end\n')
         if (int(debug) == 1): 
-            f.write('      cmd = {cmd, " --debug"};\n')
-            f.write('      $fdisplay(fd, "%s", "--debug");\n')
-        f.write('    end\n')
-    f.write('    $fclose(fd);\n\n')
-    f.write('    cmd = {"date; ln -sf ", getenv(\"ROOT\"), "/out/pub/fw . && ", getenv(\"ROOT\"), "/out/pub/ttx/", GetTtxName(testname),"/", GetTtxName(testname), cmd, " && cd ",  getenv(\"ROOT\"), "/src/test_ckernels/ckti && out/ckti --dir=", getenv(\"PWD\")," --test=", GetTtxName(testname), "; date;"};\n')
-    
-    f.write('    $display("CMD: %s", cmd);\n')
-    f.write('    ret = $system(cmd);\n')
-    f.write('    $display("RET: %d", ret);\n')
+            f.write('      cmd = {cmd, " {}debug"};\n')
+            f.write('      $fdisplay(fd_genargs, "%s", "{}debug");\n')
+        f.write('    end\n\n')
+    f.write('    $fclose(fd_genargs);\n')
+    f.write('    $fclose(fd_plusargs);\n\n')
     f.write('  endfunction\n')
 
     f.write('\n  //===========================================\n')
-    f.write('  // Task: GenImage\n')
-    f.write('  task GenImage();\n')
+    f.write('  // Task: Run\n')
+    f.write('  task Run();\n')
     #   Get test argument
     f.write('    string testname = "UNKNOWN";\n')
     f.write('    $value$plusargs("test=%s", testname);\n')
@@ -280,6 +272,11 @@ def gen_solver_sv(sv, spec, debug):
     f.write('    // Generate arguments\n')
     f.write('    GenArgs(testname);\n')
     f.write('  endtask\n')
+    
+    f.write('\n\n  //===========================================\n')
+    f.write('  initial begin\n')
+    f.write('    Run();\n')
+    f.write('  end\n')
     f.write('endmodule\n')
     f.close()
 

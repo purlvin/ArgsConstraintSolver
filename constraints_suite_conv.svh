@@ -8,12 +8,17 @@ class constraints_suite_conv extends constraints_global;
   rand e_conv       conv;
   rand integer      filters;
   
-  typedef integer e_int_local;
-  rand e_int_local   abc;
+  typedef integer   e_int_local;
+  rand e_int_local  abc;
   typedef bit       e_switch;            
   rand e_switch     cde;
   typedef integer   e_int_coordinate;
   rand e_int_coordinate coor[4];
+  
+  typedef integer   e_int_hex;
+  rand e_int_hex    hex;
+  rand e_switch     PLUSARGS__foo;
+  rand integer      PLUSARGS__bar;
 
 
   // Test suite default constraints
