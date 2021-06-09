@@ -215,7 +215,13 @@ def gen_solver_sv(sv, spec, debug):
                 f.write('        cmd = {cmd, " ", args};\n')
                 f.write('        $fdisplay({0}, "%s", args);\n'.format(fd))
             else:
-                f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var if (int(n)==1) else var + "[0]"))
+                if (int(n)==1) :
+                    f.write('      if ({0} != `INTEGER__DIS) begin\n'.format(var if (int(n)==1) else var + "[0]"))
+                else :
+                    f.write('      if (')
+                    for i in range(int(n)-1):
+                        f.write('({0}[{1}] != `INTEGER__DIS) || '.format(var, i))
+                    f.write('({0}[{1}] != `INTEGER__DIS)) begin\n'.format(var, int(n)-1))
                 if (t in ["integer"]):
                     f.write('        $sformat(args, "{0}{1}=%0d", {2});\n'.format(prefix, v, var))
                 elif ("e_int_hex" in t):
@@ -224,12 +230,10 @@ def gen_solver_sv(sv, spec, debug):
                     div = t.replace("e_int_x", "") + ".00"
                     f.write('        $sformat(args, "{0}{1}=%0.2f", {2}/{3});\n'.format(prefix, v, var, div))
                 elif ("e_int_coordinate" in t):
-                    a1 = []
-                    a2 = []
+                    f.write('        $sformat(args, "--coor=");\n')
                     for i in reversed(range(int(n))):
-                        a1.append("%0d") 
-                        a2.append("{}[{}]".format(var,i)) 
-                    f.write('        $sformat(args, "{0}{1}={2}", {3});\n'.format(prefix, v, ",".join(a1), ",".join(a2)))
+                        f.write('        if ({0}[{1}] != `INTEGER__DIS) $sformat(args, "%s%0d,", args, {0}[{1}]);\n'.format(var, i))
+                    f.write('        args = args.substr(0,args.len()-2);\n')
                 else:
                     f.write('        string arr[$];\n'.format(var))
                     f.write('        arr = SplitStr({0}.name(), "__");\n'.format(var))

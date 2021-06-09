@@ -177,7 +177,7 @@ def testRunInParallel(id, test, base, ttx, args):
     ret = os.system(cmd)
     if ret != 0:
       logger.error(" [{}]: {} : Stage 1 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
-      raise "Die run_test.py!"
+      #FIXME: raise "Die run_test.py!"
     for x in ["genargs", "plusargs"] :
         cfg = os.path.join(test_rundir, x + ".cfg")
         f = open(cfg, "r")
@@ -197,18 +197,22 @@ def testRunInParallel(id, test, base, ttx, args):
     cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} && {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2}  &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
     logger.debug(cmd)
     ret = os.system(cmd)
-    if ret != 0:
-      logger.error(" [{}]: {} : TTX generation failed! \n  CMD: {0}".format(id, test, cmd)) 
-      raise "Die run_test.py!"
+    #FIXME: if ret != 0:
+    #FIXME:   logger.error(" [{}]: {} : TTX generation failed! \n  CMD: {0}".format(id, test, cmd)) 
+    #FIXME:   raise "Die run_test.py!"
     # Stage 2 VCS run
     logger.info('   --> Stage 2 VCS run')
-    args = merge_sim_run_args(args["args"], test_list["args"][test])
-    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5}&> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"])
+    #print(args["args"])
+    #print(test_list["args"][test])
+    print(cfg_args["plusargs"])
+    #FIXME: args = merge_sim_run_args(args["args"], test_list["args"][test])
+    #FIXME: print(args)
+    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"])
     logger.debug(cmd)
     ret = os.system(cmd)
     if ret != 0:
       logger.error(" [{}]: {} : Stage 2 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
-      raise "Die run_test.py!"
+      #FIXME: raise "Die run_test.py!"
 def vsc_run(test_list, args):
     id = 0
     for test,ttx in sorted(test_list["ttx"].items()):
@@ -284,7 +288,7 @@ def main():
     # STEP 1: Source publish
     if (not args["j_sim_build"]):
       logger.info(' STEP 1: Source publish')
-      source_publish(test_list)
+      #FIXME: source_publish(test_list)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):

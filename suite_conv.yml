@@ -12,7 +12,7 @@ templates:
       - suite_conv_default=1
     _args  : &__conv_t__args
       - *__math_t__args
-      - +conv=1
+      - +yml_conv=1
     _when  : &__conv_t__when
       [*__math_t__when, conv]
 
@@ -27,6 +27,8 @@ testcases:
     _constr_grps : 
       - *__conv_t__constr_grps
       - conv_basic=1
+    _when  :
+      [*__conv_t__when, "sanity"]
   
   conv_compressed:
     <<: *__conv_t
