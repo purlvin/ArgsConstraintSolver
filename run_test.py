@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import glob, shutil, os, sys, signal
 from multiprocessing import Process
+import subprocess
 import yaml
 import re
 import argparse
@@ -68,6 +69,43 @@ class ColorFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         record.relativeCreated /= 1000
         return formatter.format(record)
+
+# -------------------------------
+def construct_email_context(stage, result, run_cmd, tests_status, log_file):
+    #Result Based on Stage
+    result_stage      = "PASS"
+    #Subject
+    email_subject     = "[run_test] Tensix - Personal sanity " + result_stage
+    #Html Header
+    email_body_header = "Content-Type: text/html\n<FONT FACE=courier>\n<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n";
+    #Body
+    email_brief_info = "<span style='font-size: 22px'><b> DV_CHECK_SUBMIT REPORT </b> - <span style = 'color:";
+#FIXME:    $email_brief_info .= ($result_stage eq "PASS")? "green" : ($result_stage eq "NOT RUN" || $result_stage eq "BUILD FAIL - TESTS STILL RUNNING")? "orange" : "red";
+#FIXME:    $email_brief_info .= "';>$result_stage</span></span><hr>\n".
+#FIXME:                           "<table style='border:0px;font-size:14px'>".
+#FIXME:                           "  <tr class='row'><td class='key'>Sanity Run ID :</td><td class='value'>$DV_CHECK_SUBMIT_ID</td></tr>\n\n" .
+#FIXME:                           "  <tr class='row'><td class='key'>Workspace :</td><td class='value'>($HOST\@$SITE) $HOME</td></tr>\n\n" .
+#FIXME:                           "  <tr class='row'><td class='key'>CL :</td><td class='value'>" . `cat $HOME/configuration_id` . "</td></tr>\n".
+#FIXME:                           "  <tr class='row'><td class='key'>DJ Log:</td><td class='value'>$log_file<br><i>*More detail log files can be found at $LOG_DIR</i></td></tr>\n\n".
+#FIXME:                           "  <tr class='row'><td class='key'>DJ Command:</td><td class='value'>$run_cmd</td></tr>\n"; 
+#FIXME:    $email_brief_info  =   ($result_stage eq "BUILD FAIL - TESTS STILL RUNNING")? "$email_brief_info  <tr class='row'><td class='key'>Note:</td><td style='color: red'; class='value'>'-full_run' WAS ENABLED - TESTS STILL RUNNING AFTER BUILD AND COMPILE FAIL</td></tr>\n" : $email_brief_info;
+    email_brief_info +=   "</table>\n"; 
+    #Summary + details
+    email_summary = "<b>SANITY SUMMARY: </b>\n";
+#FIXME:    $email_summary .= runtime::gen_test_status_html($tests_status, $SITE, $stage);    
+    #End tags
+    email_end_tags = "</pre></font></body></html>\n</FONT>";
+    
+    #All Email content 
+    #FIXME: email_body = email_body_header + email_brief_info + email_summary + email_passphrase + email_end_tags;
+    email_body = email_body_header + email_brief_info + email_summary + email_end_tags;
+    return (email_subject, email_body);
+def send_mail(subject, body):
+    return_stat = subprocess.run(["mail", "-s {_subject}".format(_subject=subject), "puzhang@mkdcmail.amd.com"], input=body.encode())
+
+subject,body = construct_email_context(1,2,3,4,5)
+send_mail(subject,body)
+exit();
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group, tgt_args):
