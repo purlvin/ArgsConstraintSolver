@@ -77,7 +77,7 @@ def construct_email_context(stage, result, run_cmd, tests_status, log_file):
     #Subject
     email_subject     = "[run_test] Tensix - Personal sanity " + result_stage
     #Html Header
-    email_body_header = "Content-Type: text/html\n<FONT FACE=courier>\n<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n";
+    email_body_header = "<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n";
     #Body
     email_brief_info = "<span style='font-size: 22px'><b> DV_CHECK_SUBMIT REPORT </b> - <span style = 'color:";
 #FIXME:    $email_brief_info .= ($result_stage eq "PASS")? "green" : ($result_stage eq "NOT RUN" || $result_stage eq "BUILD FAIL - TESTS STILL RUNNING")? "orange" : "red";
@@ -94,14 +94,23 @@ def construct_email_context(stage, result, run_cmd, tests_status, log_file):
     email_summary = "<b>SANITY SUMMARY: </b>\n";
 #FIXME:    $email_summary .= runtime::gen_test_status_html($tests_status, $SITE, $stage);    
     #End tags
-    email_end_tags = "</pre></font></body></html>\n</FONT>";
+    email_end_tags = "</pre></font></body></html>";
     
     #All Email content 
-    #FIXME: email_body = email_body_header + email_brief_info + email_summary + email_passphrase + email_end_tags;
     email_body = email_body_header + email_brief_info + email_summary + email_end_tags;
     return (email_subject, email_body);
 def send_mail(subject, body):
-    return_stat = subprocess.run(["mail", "-s {_subject}".format(_subject=subject), "puzhang@mkdcmail.amd.com"], input=body.encode())
+    body = '''\
+To: puzhang@atlmail.amd.com
+Subject: {_subject}
+Content-Type: text/html
+
+<FONT FACE=courier>
+{_body}
+</FONT>
+'''.format(_subject=subject, _body=body)
+    return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
+    
 
 subject,body = construct_email_context(1,2,3,4,5)
 send_mail(subject,body)
