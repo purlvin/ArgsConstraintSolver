@@ -1,5 +1,4 @@
 ROOT?=$(shell git rev-parse --show-toplevel)
-include $(ROOT)/infra/common.mk
 
 CONSTRAINTS_SOLVER = $(ROOT)/out/pub/constraints_solver.sv 
 .PHONY: gen

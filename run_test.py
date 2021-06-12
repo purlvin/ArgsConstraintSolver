@@ -9,6 +9,7 @@ import random
 import time
 import logging;
 from datetime import datetime
+from run_lib  import send_email
 
 # -------------------------------
 # Path variables
@@ -25,7 +26,7 @@ start_time  = time.time()
 logger      = logging.getLogger()
 log         = os.path.join(outdir,  "run_test.log")
 proc        = []
-
+cur_stage   = ["UNKNOWN", "UNKNOWN"]
 
 # -------------------------------
 class Colors:
@@ -71,52 +72,6 @@ class ColorFormatter(logging.Formatter):
         return formatter.format(record)
 
 # -------------------------------
-def construct_email_context(stage, result, run_cmd, tests_status, log_file):
-    #Result Based on Stage
-    result_stage      = "PASS"
-    #Subject
-    email_subject     = "[run_test] Tensix - Personal sanity " + result_stage
-    #Html Header
-    email_body_header = "<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n";
-    #Body
-    email_brief_info = "<span style='font-size: 22px'><b> DV_CHECK_SUBMIT REPORT </b> - <span style = 'color:";
-#FIXME:    $email_brief_info .= ($result_stage eq "PASS")? "green" : ($result_stage eq "NOT RUN" || $result_stage eq "BUILD FAIL - TESTS STILL RUNNING")? "orange" : "red";
-#FIXME:    $email_brief_info .= "';>$result_stage</span></span><hr>\n".
-#FIXME:                           "<table style='border:0px;font-size:14px'>".
-#FIXME:                           "  <tr class='row'><td class='key'>Sanity Run ID :</td><td class='value'>$DV_CHECK_SUBMIT_ID</td></tr>\n\n" .
-#FIXME:                           "  <tr class='row'><td class='key'>Workspace :</td><td class='value'>($HOST\@$SITE) $HOME</td></tr>\n\n" .
-#FIXME:                           "  <tr class='row'><td class='key'>CL :</td><td class='value'>" . `cat $HOME/configuration_id` . "</td></tr>\n".
-#FIXME:                           "  <tr class='row'><td class='key'>DJ Log:</td><td class='value'>$log_file<br><i>*More detail log files can be found at $LOG_DIR</i></td></tr>\n\n".
-#FIXME:                           "  <tr class='row'><td class='key'>DJ Command:</td><td class='value'>$run_cmd</td></tr>\n"; 
-#FIXME:    $email_brief_info  =   ($result_stage eq "BUILD FAIL - TESTS STILL RUNNING")? "$email_brief_info  <tr class='row'><td class='key'>Note:</td><td style='color: red'; class='value'>'-full_run' WAS ENABLED - TESTS STILL RUNNING AFTER BUILD AND COMPILE FAIL</td></tr>\n" : $email_brief_info;
-    email_brief_info +=   "</table>\n"; 
-    #Summary + details
-    email_summary = "<b>SANITY SUMMARY: </b>\n";
-#FIXME:    $email_summary .= runtime::gen_test_status_html($tests_status, $SITE, $stage);    
-    #End tags
-    email_end_tags = "</pre></font></body></html>";
-    
-    #All Email content 
-    email_body = email_body_header + email_brief_info + email_summary + email_end_tags;
-    return (email_subject, email_body);
-def send_mail(subject, body):
-    body = '''\
-To: puzhang@atlmail.amd.com
-Subject: {_subject}
-Content-Type: text/html
-
-<FONT FACE=courier>
-{_body}
-</FONT>
-'''.format(_subject=subject, _body=body)
-    return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
-    
-
-subject,body = construct_email_context(1,2,3,4,5)
-send_mail(subject,body)
-exit();
-
-# -------------------------------
 def get_test_list(yml, tgt_test, tgt_group, tgt_args):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
@@ -129,6 +84,7 @@ def get_test_list(yml, tgt_test, tgt_group, tgt_args):
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
+    global test_list
     test_list = {"base": {}, "ttx": {}, "args": {}}
     # Generate test list 
     if (tgt_test) :
@@ -163,6 +119,8 @@ def env_cleanup():
 
 # -------------------------------
 def source_publish(test_list):
+    global cur_stage
+    cur_stage = ["Source publish", "START"]
     cmd = '''\
 export ROOT={0}
 echo -e "-- STAGE build_tools --"
@@ -194,6 +152,8 @@ echo -e "-- STAGE build_test_generator --"
 # -------------------------------
 def vsc_compile():
     # Stage 1 VCS compile
+    global cur_stage
+    cur_stage = ["Stage 1 VCS compile", "START"]
     logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {0}/vcs_compile.log".format(simdir_stg1, tbdir, pubdir, sv)
@@ -202,6 +162,7 @@ def vsc_compile():
       logger.error("Stage 1 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       raise "Die run_test.py!"
     # Stage 2 VCS compile
+    cur_stage = ["Stage 2 VCS compile", "START"]
     logger.info('   --> Stage 2 VCS compile')
     cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
     ret = os.system(cmd)
@@ -218,6 +179,8 @@ def testRunInParallel(id, test, base, ttx, args):
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
     # Stage 1 VCS run
+    global cur_stage
+    cur_stage = ["Stage 1 VCS run", "START"]
     logger.info('   --> Stage 1 VCS run')
     cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {0}/stg1_vcs_run.log".format(test_rundir, simdir_stg1, base, seed)
     logger.debug(cmd)
@@ -240,6 +203,7 @@ def testRunInParallel(id, test, base, ttx, args):
         for kk,vv in cfg_hash[k].items():
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
     # TTX generation
+    cur_stage = ["TTX generation", "START"]
     logger.info('   --> TTX generation')
     cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} && {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2}  &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
     logger.debug(cmd)
@@ -248,6 +212,7 @@ def testRunInParallel(id, test, base, ttx, args):
     #FIXME:   logger.error(" [{}]: {} : TTX generation failed! \n  CMD: {0}".format(id, test, cmd)) 
     #FIXME:   raise "Die run_test.py!"
     # Stage 2 VCS run
+    cur_stage = ["Stage 2 VCS run", "START"]
     logger.info('   --> Stage 2 VCS run')
     #print(args["args"])
     #print(test_list["args"][test])
@@ -308,6 +273,7 @@ def main():
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
     ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
+    global args
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "sanity"
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
@@ -353,5 +319,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-
+    try:
+        main()
+    finally:
+        logger.info(' Sending Email...')
+        send_email(cur_stage, test_list, args)
