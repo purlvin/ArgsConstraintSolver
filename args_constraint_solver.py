@@ -34,14 +34,14 @@ def get_test_spec(yml, outdir):
                     orig = None
                 constraints["class"][class_name] = {"orig": orig, "vars": {}, "constrs": []}
             # Class - variables
-            m = re.match(r'.*rand\s*(\w+)\s*(.+)\s*;.*', line)
+            m = re.match(r'\s*rand\s*(\w+)\s*(.+)\s*;.*', line)
             if (m):
                 n    = 1
                 k, v = m.groups()
                 m = re.match(r'(\w+)\s*\[(\d+)\]', v)
                 if (m):
                     v, n = m.groups()
-                if (k == "e_int_local") : continue
+                if (k == "e_int_local") or (k == "e_switch_local"): continue
                 k = "{0}:{1}".format(k,n)
                 constraints["class"][class_name]["vars"][v] = k
             # Constraint
@@ -108,14 +108,17 @@ def get_test_spec(yml, outdir):
     for test, test_hash in cfg["testcases"].items():
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
+        constr_hash = {}
         for constr_grp in flatten_list(test_hash["_constr_grps"]):
             cfg = [i.strip() for i in constr_grp.split("=")]
+            constr_hash[cfg[0]] = int(cfg[1]) if len(cfg)>1 else 1
             if test_hash["_constr_class"] not in spec["constraints"]["class"]: raise ValueError("Invalid constraint class '{0}' specified for test '{1}' (Valid classes: {2})!".format(test_hash["_constr_class"], test, spec["constraints"]["class"].keys())) 
             if cfg[0] not in spec["constraints"]["class"][test_hash["_constr_class"]]["constrs"]: raise ValueError("Invalid constraint group '{0}' specified for test '{1}' (Valid constraint groups: {2})!".format("{0}.{1}".format(test_hash["_constr_class"], cfg[0]), test, spec["constraints"]["class"][test_hash["_constr_class"]]["constrs"])) 
             if (test not in tests["cases"]):        tests["cases"][test] = []
-            if ((len(cfg)==1) or (int(cfg[1])>0)):  
-                tests["cases"][test].append("_{0}.{1}".format(test_hash["_constr_class"], cfg[0]))
-                if (test_hash["_constr_class"] in unused_class): unused_class.remove(test_hash["_constr_class"])
+        for k,v in constr_hash.items():
+            if (v==0): continue 
+            tests["cases"][test].append("_{0}.{1}".format(test_hash["_constr_class"], k))
+            if (test_hash["_constr_class"] in unused_class): unused_class.remove(test_hash["_constr_class"])
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
@@ -192,9 +195,9 @@ def gen_solver_sv(sv, spec, debug):
     f.write('  function GenArgs(input string testname);\n')
     f.write('    int fd_genargs, fd_plusargs, ret;\n')
     f.write('    string args, val, cmd;\n\n')
-    f.write('    cmd          = "";\n')
-    f.write('    fd_genargs   = $fopen("genargs.cfg", "w");\n')
-    f.write('    fd_plusargs = $fopen("plusargs.cfg", "w");\n')
+    f.write('    cmd         = "";\n')
+    f.write('    fd_genargs  = $fopen("genargs_rnd.cfg", "w");\n')
+    f.write('    fd_plusargs = $fopen("plusargs_rnd.cfg", "w");\n')
     for c in spec["constraints"]["class"]:
         f.write('\n    // -> Class {0}\n'.format(c))
         f.write('    if (_{0}_enable) begin\n'.format(c))
@@ -230,7 +233,7 @@ def gen_solver_sv(sv, spec, debug):
                     div = t.replace("e_int_x", "") + ".00"
                     f.write('        $sformat(args, "{0}{1}=%0.2f", {2}/{3});\n'.format(prefix, v, var, div))
                 elif ("e_int_coordinate" in t):
-                    f.write('        $sformat(args, "--coor=");\n')
+                    f.write('        $sformat(args, "--{0}=");\n'.format(v))
                     for i in reversed(range(int(n))):
                         f.write('        if ({0}[{1}] != `INTEGER__DIS) $sformat(args, "%s%0d,", args, {0}[{1}]);\n'.format(var, i))
                     f.write('        args = args.substr(0,args.len()-2);\n')

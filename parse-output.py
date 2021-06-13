@@ -20,6 +20,26 @@ TIME_ME=False  # Set to 'True' to log time each step takes
 TIME_ME_TS=None
 TIME_ME_CURRENT_STEP=None
 
+
+
+mongoclient = MongoClient('mongodb://zlogger:zlogger@nextstep:30002/zversim', serverSelectionTimeoutMS=5000)
+db = mongoclient.zversim
+results_collection = db.results
+exit_signatures_collection = db.exit_signatures
+metrics_collection = db.metrics
+
+dt = datetime.datetime.utcnow()
+results_collection.insert_one ({
+    'utc_time' : dt,
+    'env' : "env",
+    'summary': "summary",
+    'exit_signatures': "exit_signatures",
+})
+
+
+
+
+
 def time_me(starting="", done=False):
     global TIME_ME, TIME_ME_TS, TIME_ME_CURRENT_STEP
     if not TIME_ME:

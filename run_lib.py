@@ -61,8 +61,8 @@ def construct_email_context(meta, run_cmd, tests_status, log_file):
 def send_email(meta, test_list, args):
     subject,body = construct_email_context(meta, "run_test -s=XXXX", "status", "vcs_run.log")
     body = '''\
-To: puzhang@atlmail.amd.com
-Subject: {_subject}
+To: mchit@tenstorrent.com
+Subject: {_subject} 11
 Content-Type: text/html
 
 <FONT FACE=courier>
