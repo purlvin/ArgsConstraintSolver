@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import glob, shutil, os, sys, signal
+import glob, shutil, psutil, os, sys, signal
 from multiprocessing import Process
 import subprocess
 import yaml
@@ -26,7 +26,6 @@ start_time  = time.time()
 logger      = logging.getLogger()
 log         = os.path.join(outdir,  "run_test.log")
 proc        = []
-cur_stage   = ["UNKNOWN", "UNKNOWN"]
 
 # -------------------------------
 class Colors:
@@ -70,6 +69,34 @@ class ColorFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         record.relativeCreated /= 1000
         return formatter.format(record)
+class Meta:
+    stages      = {} 
+    test_stages = {} 
+    def __init__(self):
+        self.id = random.getrandbits(32)
+    def id(self):
+        return self.id
+    def cmdline(self):
+        process = psutil.Process(os.getpid())
+        cmdline = process.cmdline()
+        return " ".join(cmdline)
+    def register_stage(self, stage, log):
+        i = len(self.stages)
+        self.stages[i] = {"stage": stage, "status": "RUNNING", "log": log}
+    def update_status(self, status):
+        i = len(self.stages)
+        self.stages[i-1]["status"] = status
+    def last_stage(self):
+        i = len(self.stages)
+        return [self.stages[i-1]["stage"], self.stages[i-1]["status"]]
+    def register_test_stage(self, test, stage):
+        s = [{"stage": stage, "status": "RUNNING"}]
+        self.test_stages[test] = self.test_stages[test] + s if (test in self.test_stages) else s
+    def update_test_status(self, test, status):
+        if (test not in self.test_stages): raise ValueError("FAILED to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
+        i = len(self.test_stages[test])
+        self.test_stages[test][i-1]["status"] = status
+meta = Meta()
 
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group, tgt_args):
@@ -90,14 +117,14 @@ def get_test_list(yml, tgt_test, tgt_group, tgt_args):
     if (tgt_test) :
         if tgt_test not in tests['ttx'].keys(): 
           logger.error("Invalid test name '{}'!".format(tgt_test)) 
-          raise "Die run_test.py!"
+          raise Exception("Die run_test.py!")
         test_list["base"][tgt_test] = tgt_test
         test_list["ttx"][tgt_test]  = tests['ttx'][tgt_test]
         test_list["args"][tgt_test] = tests['args'][tgt_test]
     else :
         if tgt_group not in tests['groups']: 
           logger.error("Invalid when tag '{}'!".format(tgt_group))
-          raise "Die run_test.py!"
+          raise Exception("Die run_test.py!")
         val = tests['groups'][tgt_group]
         for k,v in val.items():
             for i in range(v):
@@ -119,8 +146,9 @@ def env_cleanup():
 
 # -------------------------------
 def source_publish(test_list):
-    global cur_stage
-    cur_stage = ["Source publish", "START"]
+    global meta
+    log = "{_pubdir}/publish.log".format(_pubdir=pubdir) 
+    meta.register_stage("Source publish", log)
     cmd = '''\
 export ROOT={0}
 echo -e "-- STAGE build_tools --"
@@ -142,33 +170,41 @@ echo -e "-- STAGE build_test_generator --"
     f.write(cmd)
     f.close()
     logger.debug('  -> Building testbench : {0}'.format(sh))
-    cmd = "  source {0} &> {1}/publish.log ".format(sh, pubdir)
+    cmd = "  source {0} &> {1} ".format(sh, log)
     logger.debug(cmd)
     ret = os.system(cmd)
     if ret != 0: 
-      logger.error("Source publish failed! \n  CMD: {0}".format(cmd)) 
-      raise "Die run_test.py!"
+        logger.error("Source publish failed! \n  CMD: {0}".format(cmd)) 
+        meta.update_status("FAIL")
+        raise Exception("Die run_test.py!")
+    meta.update_status("PASS")
 
 # -------------------------------
 def vsc_compile():
     # Stage 1 VCS compile
-    global cur_stage
-    cur_stage = ["Stage 1 VCS compile", "START"]
+    global meta
+    log = "{_simdir_stg1}/vcs_compile.log".format(_simdir_stg1=simdir_stg1) 
+    meta.register_stage("Stage 1 VCS compile", log)
     logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
-    cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {0}/vcs_compile.log".format(simdir_stg1, tbdir, pubdir, sv)
+    cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {4}".format(simdir_stg1, tbdir, pubdir, sv, log)
     ret = os.system(cmd)
     if ret != 0:
       logger.error("Stage 1 VCS compile failed! \n  CMD: {0}".format(cmd)) 
-      raise "Die run_test.py!"
+      meta.update_status("FAIL")
+      raise Exception("Die run_test.py!")
+    meta.update_status("PASS")
     # Stage 2 VCS compile
-    cur_stage = ["Stage 2 VCS compile", "START"]
+    log = "{_simdir}/vcs_compile.log".format(_simdir=simdir) 
+    meta.register_stage("Stage 1 VCS compile", log)
     logger.info('   --> Stage 2 VCS compile')
-    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {3}/vcs_compile.log".format(tbdir, pubdir, sv, simdir, root)
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
     ret = os.system(cmd)
     if ret != 0:
       logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
-      raise "Die run_test.py!"
+      meta.update_status("FAIL")
+      raise Exception("Die run_test.py!")
+    meta.update_status("PASS")
 
 # -------------------------------
 def testRunInParallel(id, test, base, ttx, args):
@@ -179,15 +215,18 @@ def testRunInParallel(id, test, base, ttx, args):
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
     # Stage 1 VCS run
-    global cur_stage
-    cur_stage = ["Stage 1 VCS run", "START"]
+    global meta
+    log = "{_test_rundir}/stg1_vcs_run.log".format(_test_rundir=test_rundir) 
+    meta.register_test_stage("Stage 1 VCS run", test, log)
     logger.info('   --> Stage 1 VCS run')
-    cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {0}/stg1_vcs_run.log".format(test_rundir, simdir_stg1, base, seed)
+    cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
     logger.debug(cmd)
     ret = os.system(cmd)
     if ret != 0:
       logger.error(" [{}]: {} : Stage 1 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
-      #FIXME: raise "Die run_test.py!"
+      meta.update_test_status(test, "FAIL")
+      #FIXME: raise Exception("Die run_test.py!")
+    meta.update_test_status(test, "PASS")
     for x in ["genargs", "plusargs"] :
         cfg = os.path.join(test_rundir, x + ".cfg")
         f = open(cfg, "r")
@@ -203,30 +242,38 @@ def testRunInParallel(id, test, base, ttx, args):
         for kk,vv in cfg_hash[k].items():
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
     # TTX generation
-    cur_stage = ["TTX generation", "START"]
+    log = "{_test_rundir}/ttx_gen.log".format(_test_rundir=test_rundir) 
+    meta.register_test_stage("TTX generation", test, log)
     logger.info('   --> TTX generation')
-    cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} && {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2}  &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
+    cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} && {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2}  &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
     logger.debug(cmd)
     ret = os.system(cmd)
     #FIXME: if ret != 0:
     #FIXME:   logger.error(" [{}]: {} : TTX generation failed! \n  CMD: {0}".format(id, test, cmd)) 
-    #FIXME:   raise "Die run_test.py!"
+    #FIXME:   meta.update_test_status(test, "FAIL")
+    #FIXME:   raise Exception("Die run_test.py!")
+    meta.update_test_status(test, "PASS")
     # Stage 2 VCS run
-    cur_stage = ["Stage 2 VCS run", "START"]
+    log = "{_test_rundir}/vcs_run.log".format(_test_rundir=test_rundir) 
+    meta.register_test_stage("Stage 2 VCS run", test, log)
     logger.info('   --> Stage 2 VCS run')
     #print(args["args"])
     #print(test_list["args"][test])
     print(cfg_args["plusargs"])
     #FIXME: args = merge_sim_run_args(args["args"], test_list["args"][test])
     #FIXME: print(args)
-    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {0}/vcs_run.log".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"])
+    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=high '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
     logger.debug(cmd)
     ret = os.system(cmd)
     if ret != 0:
       logger.error(" [{}]: {} : Stage 2 VCS run failed! \n  CMD: {0}".format(id, test, cmd)) 
-      #FIXME: raise "Die run_test.py!"
+      meta.update_test_status(test, "FAIL")
+      #FIXME: raise Exception("Die run_test.py!")
+    meta.update_test_status(test, "PASS")
 def vsc_run(test_list, args):
     id = 0
+    meta.register_stage("Simulation run", "")
+    meta.update_status("FAIL")
     for test,ttx in sorted(test_list["ttx"].items()):
         if (args["dump"]):  test_list["args"][test] += " --vcdfile=waveform.vcd"
         if (args["debug"]): test_list["args"][test] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
@@ -241,12 +288,19 @@ def vsc_run(test_list, args):
 def result_report(test_list):
     results = {}
     id = 0
+    stage_status = "PASS"
     for test in sorted(test_list["ttx"].keys()):
         results[test] = Colors.RED + "FAIL" + Colors.END
         run_log = os.path.join(rundir, test, "vcs_run.log")
-        if ("<TEST-PASSED>" in open(run_log).read()): results[test] =  Colors.GREEN + "PASS" + Colors.END
-        logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "" if "PASS" in results[test] else "(run_log: {0})".format(run_log))) 
+        if ("<TEST-PASSED>" in open(run_log).read()): 
+            results[test] =  Colors.GREEN + "PASS" + Colors.END
+            logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "")) 
+        else:
+            logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "(run_log: {0})".format(run_log)))
+            meta.update_test_status(test, "FAIL")
+            stage_status = "FAIL"
         id += 1
+    meta.update_status(stage_status)
 
 # -------------------------------
 def signal_handler(sig, frame):
@@ -323,4 +377,4 @@ if __name__ == "__main__":
         main()
     finally:
         logger.info(' Sending Email...')
-        send_email(cur_stage, test_list, args)
+        send_email(meta, test_list, args)
