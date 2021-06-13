@@ -54,20 +54,25 @@ def construct_email_context(meta, run_cmd, tests_status, log_file):
     #End tags
     email_end_tags = "</pre></font></body></html>";
     
+    print("purlivn", meta.stages)
+    print("purlivn", stage, status)
+    
     #All Email content 
     email_body = email_body_header + email_body + email_end_tags;
+    print("purlivn", email_body)
     return (email_subject, email_body);
 
 def send_email(meta, test_list, args):
+    user         = os.environ.get('USER')
     subject,body = construct_email_context(meta, "run_test -s=XXXX", "status", "vcs_run.log")
     body = '''\
-To: mchit@tenstorrent.com
-Subject: {_subject} 11
+To: {_user}@atlmail.amd.com
+Subject: {_subject}
 Content-Type: text/html
 
 <FONT FACE=courier>
 {_body}
 </FONT>
-'''.format(_subject=subject, _body=body)
+'''.format(_user=user, _subject=subject, _body=body)
     return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
 
