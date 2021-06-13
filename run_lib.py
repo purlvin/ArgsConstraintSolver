@@ -7,12 +7,12 @@ from datetime import datetime
 
 # -------------------------------
 # Email
-def construct_email_context(meta, run_cmd, tests_status, log_file):
-    stage, status = meta.last_stage()
-    root          = os.environ.get('ROOT')
-    host          = os.environ.get('HOST')
-    git_branch    = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
-    git_hash      = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+def construct_email_context(meta):
+    status      = meta.stages["stages"][0]["status"]
+    root        = os.environ.get('ROOT')
+    host        = os.environ.get('HOST')
+    git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+    git_hash    = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
     #Subject
     email_subject     = "[run_test] Tensix(:{_git_branch}) - Personal sanity - {_status}".format(_git_branch=git_branch, _status=status)
     #Html Header
@@ -28,43 +28,52 @@ def construct_email_context(meta, run_cmd, tests_status, log_file):
   <tr class='row'><td class='key'>Cmdline:</td><td class='value'>{_cmdline}</td></tr>
 </table>
 </br>
-'''.format(_color="green" if (status == "PASS") else "red", _status=status, _stage=stage, _id=meta.id, _host=host, _root=root, _git_hash=git_hash, _git_branch=git_branch, _cmdline=meta.cmdline())
+'''.format(_color="green" if (status == "PASS") else "red", _status=status, _stage=meta.stages["current"], _id=meta.id, _host=host, _root=root, _git_hash=git_hash, _git_branch=git_branch, _cmdline=meta.cmdline())
     #   -> Stage summary
+    rows = ["", ""]
+    for s in meta.STG:
+        stage  = s.name
+        status = meta.stage_status(stage)
+        rows[0] += "<th>{_stage}</th>".format(_stage=stage)
+        rows[1] += "<td style='color: {_color};'>{_status}</td>".format(_color="red" if (status=="FAIL") else "green" if (status=="PASS") else "gray", _status=status)
     email_body += '''\
 <b>STAGE SUMMARY: </b>
-<table><tr><th>TOTAL</th><th>PASSED</th><th>FAILED</th>
-<tr><td>4</td><td>0</td><td>4</td></tr></table>
-'''.format()
+<table><tr>{_stage_list}</tr>
+<tr>{_status_list}</tr></table>
+'''.format(_stage_list=rows[0], _status_list=rows[1])
     #   -> Sanity summary
+    total = len(meta.test_stages)
+    failed= len([hash["stages"][0] for test,hash in meta.test_stages.items() if hash["stages"][0]['status']=="FAIL"])
     email_body += '''\
 <b>SANITY SUMMARY: </b>
 <table><tr><th>TOTAL</th><th>PASSED</th><th>FAILED</th>
-<tr><td>4</td><td>0</td><td>4</td></tr></table>
-'''.format()
+<tr><td>{_total}</td><td>{_passed}</td><td>{_failed}</td></tr></table>
+'''.format(_total=total, _passed=total-failed, _failed=failed)
     #   -> Primary test status
+    rows = ""
+    for test,hash in meta.test_stages.items():
+        stage = hash["stages"][0]
+        rows += "<tr><td style='color: {_color};'>{_status}</td>".format(_color="red" if (stage["status"]=="FAIL") else "green" if (stage["status"]=="PASS") else "gray", _status=stage["status"] if  (stage["status"]=="PASS") else "{} ({})".format(stage["status"],hash["current"]))
+        rows += "<td>{_suite}</td>".format(_suite=stage["suite"])
+        rows += "<td>{_test}</td>".format(_test=test)
+        rows += "<td>{_duration}</td>".format(_duration=stage["duration"])
+        #rows += "<td><a  style='text-decoration:none;' href='{_ref}'>Log</a></td>".format(_ref=stage["log"])
+        rows += "<td>{_log}</td>".format(_log=stage["log"])
+        rows += "</tr>\n"
     email_body += '''\
 <b>PRIMARY TESTS STATUS</b>
-<table><tr><th>STATUS</th><th>SUITE</th><th>TESTNAME</th><th>CONFIG</th><th>DURATION</th><th>LOGS</th></tr>
-<tr>
-<td style='color: red;'>FAILED</td><td>bootcode::bootcode</td><td>cold_reset_sanity_blank</td><td>smu_megaip_uvm</td><td>3m</td><td><a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/pub/sim/vcs_compile.log'>Compile</a> <a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/run/bootcode/cold_reset_sanity_blank/vcs_run.log'>Run</a></td></tr><tr>
-<td style='color: red;'>FAILED</td><td>bootcode::bootcode</td><td>cold_reset_sanity_dpi</td><td>smu_megaip_uvm</td><td></td><td><a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/pub/sim/vcs_compile.log'>Compile</a> <a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/run/bootcode/cold_reset_sanity_dpi/vcs_run.log'>Run</a></td></tr><tr>
-<td style='color: red;'>FAILED</td><td>bootcode::bootcode</td><td>cold_reset_sanity_proto</td><td>smu_megaip_uvm</td><td></td><td><a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/pub/sim/vcs_compile.log'>Compile</a> <a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/run/bootcode/cold_reset_sanity_proto/vcs_run.log'>Run</a></td></tr><tr>
-<td style='color: red;'>FAILED</td><td>bootcode::bootcode</td><td>cold_reset_sanity_secure</td><td>smu_megaip_uvm</td><td></td><td><a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/pub/sim/vcs_compile.log'>Compile</a> <a  style='text-decoration:none;' href='http://logviewer-atl.amd.com/proj/smu_dev_er_normal_3/puzhang/raphael/megaip/ws1/out/linux_3.10.0_64.VCS/smu_megaip_design_raphael/config/smu_megaip_uvm/run/bootcode/cold_reset_sanity_secure/vcs_run.log'>Run</a></td></tr></table>
-'''.format()
+<table><tr><th>STATUS</th><th>SUITE</th><th>TESTNAME</th><th>DURATION</th><th>LOG</th></tr>
+{_rows}</table>
+'''.format(_rows=rows)
     #End tags
     email_end_tags = "</pre></font></body></html>";
-    
-    print("purlivn", meta.stages)
-    print("purlivn", stage, status)
-    
     #All Email content 
     email_body = email_body_header + email_body + email_end_tags;
-    print("purlivn", email_body)
     return (email_subject, email_body);
 
 def send_email(meta, test_list, args):
     user         = os.environ.get('USER')
-    subject,body = construct_email_context(meta, "run_test -s=XXXX", "status", "vcs_run.log")
+    subject,body = construct_email_context(meta)
     body = '''\
 To: {_user}@atlmail.amd.com
 Subject: {_subject}

@@ -8,6 +8,7 @@ import argparse
 import random
 import time
 import logging;
+from enum import Enum   
 from datetime import datetime
 from run_lib  import send_email
 
@@ -22,13 +23,65 @@ pubdir      = os.path.join(outdir,  "pub")
 simdir      = os.path.join(outdir,  "sim")
 simdir_stg1 = os.path.join(simdir,  "stg1")
 rundir      = os.path.join(outdir,  "run")
-start_time  = time.time()
 logger      = logging.getLogger()
 log         = os.path.join(outdir,  "run_test.log")
 proc        = []
 
 
 # -------------------------------
+class Meta:
+    STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
+    TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
+
+    start_time  = time.time()
+    stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
+    test_stages = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
+    def __init__(self, test_suite):
+        self.id = random.getrandbits(32)
+        self.stages            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
+        self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
+        for test,suite in sorted(test_suite.items()): 
+            self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": suite, "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
+            self.test_stages[test]["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.TEST_STG]
+    def id(self):
+        return self.id
+    def cmdline(self):
+        process = psutil.Process(os.getpid())
+        cmdline = process.cmdline()
+        return " ".join(cmdline)
+    def start_stage(self, stage, log):
+        self.stages["current"] = stage
+        i = self.update_status("RUNNING")
+        self.stages["stages"][i]["log"] = log
+    def update_status(self, status):
+        i = [self.stages["stages"].index(stage) for stage in self.stages["stages"] if stage['stage'] == self.stages["current"]][0]
+        self.stages["stages"][i]["status"]   = status
+        self.stages["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
+        if (status == "FAIL"): 
+            self.stages["stages"][0]["status"]   = status
+            self.stages["stages"][0]["duration"] = self.stages["stages"][i]["duration"]
+        return i
+    def stage_status(self, stage):
+        status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
+        return status
+    def start_test_stage(self, test, stage):
+        self.test_stages[test]["current"] = stage
+        i = self.update_status(test, "RUNNING")
+        self.test_stages[test]["stages"][i]["log"] = log
+    def update_test_status(self, test, status):
+        if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
+        i = [self.test_stages[test]["stages"].index(stage) for stage in self.test_stages[test]["stages"] if stage['stage'] == self.test_stages[test]["current"]][0]
+        self.test_stages[test]["stages"][i]["status"]   = status
+        self.test_stages[test]["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
+        if (status == "FAIL"): 
+            self.test_stages[test]["stages"][0]["status"] = status
+            self.test_stages[test]["stages"][0]["status"] = self.test_stages[test]["stages"][i]["duration"]
+        return i
+    def test_stage_status(self, test, stage):
+        if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
+        status = [s["status"] for s in self.test_stages[test]["stages"] if s['stage'] == stage][0]
+        return status
+
 class Colors:
     """ ANSI color codes """
     BLACK           = "\033[0;30m"
@@ -57,7 +110,7 @@ class Colors:
     END             = "\033[0m"
 class ColorFormatter(logging.Formatter):
     """Logging Formatter to add colors and count warning / errors"""
-    formatter = "[%(relativeCreated)8.2f] %(levelname)s - %(message)s".format(time.time()-start_time)
+    formatter = "[%(relativeCreated)8.2f] %(levelname)s - %(message)s".format(time.time()-Meta.start_time)
     FORMATS = {
         logging.DEBUG:      "", 
         logging.INFO:       Colors.BLUE + formatter + Colors.END,
@@ -70,57 +123,28 @@ class ColorFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         record.relativeCreated /= 1000
         return formatter.format(record)
-class Meta:
-    stages      = {} 
-    test_stages = {} 
-    def __init__(self):
-        self.id = random.getrandbits(32)
-    def id(self):
-        return self.id
-    def cmdline(self):
-        process = psutil.Process(os.getpid())
-        cmdline = process.cmdline()
-        return " ".join(cmdline)
-    def register_stage(self, stage, log):
-        i = len(self.stages)
-        self.stages[i] = {"stage": stage, "status": "RUNNING", "log": log}
-    def update_status(self, status):
-        i = len(self.stages)
-        self.stages[i-1]["status"] = status
-    def last_stage(self):
-        i = len(self.stages)
-        return [self.stages[i-1]["stage"], self.stages[i-1]["status"]]
-    def register_test_stage(self, test, stage):
-        s = [{"stage": stage, "status": "RUNNING"}]
-        self.test_stages[test] = self.test_stages[test] + s if (test in self.test_stages) else s
-    def update_test_status(self, test, status):
-        if (test not in self.test_stages): raise ValueError("FAILED to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
-        i = len(self.test_stages[test])
-        self.test_stages[test][i-1]["status"] = status
-meta = Meta()
-
-
-
 # -------------------------------
 def get_test_list(yml, tgt_test, tgt_group, tgt_args):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
-    tests = {"groups": {}, "ttx": {}, "args": {}}
+    tests = {"suite": {}, "groups": {}, "ttx": {}, "args": {}}
     for test,test_hash in spec["testcases"].items():
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
+        tests["suite"][test]= test_hash["_suite"]
         tests["ttx"][test]  = test_hash["_ttx"]
         tests["args"][test] = flatten_list(test_hash["_args"]) + tgt_args
         for group in flatten_list(test_hash["_when"]):
             if group not in tests["groups"]: tests["groups"][group] = {}
             tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
     global test_list
-    test_list = {"base": {}, "ttx": {}, "args": {}}
+    test_list = {"suite": {}, "base": {}, "ttx": {}, "args": {}}
     # Generate test list 
     if (tgt_test) :
         if tgt_test not in tests['ttx'].keys(): 
           logger.error("Invalid test name '{}'!".format(tgt_test)) 
           raise Exception("Die run_test.py!")
+        test_list["suite"][tgt_test]= tests['suite'][tgt_test]
         test_list["base"][tgt_test] = tgt_test
         test_list["ttx"][tgt_test]  = tests['ttx'][tgt_test]
         test_list["args"][tgt_test] = tests['args'][tgt_test]
@@ -131,6 +155,7 @@ def get_test_list(yml, tgt_test, tgt_group, tgt_args):
         val = tests['groups'][tgt_group]
         for k,v in val.items():
             for i in range(v):
+                test_list["suite"][k+"_"+str(i)]= tests['suite'][k]
                 test_list["base"][k+"_"+str(i)] = k
                 test_list["ttx"][k+"_"+str(i)]  = tests['ttx'][k]
                 test_list["args"][k+"_"+str(i)] = tests['args'][k]
@@ -148,10 +173,9 @@ def env_cleanup():
     if os.path.exists(outdir): shutil.rmtree(outdir)
 
 # -------------------------------
-def source_publish(test_list):
-    global meta
-    log = "{_pubdir}/publish.log".format(_pubdir=pubdir) 
-    meta.register_stage("Source publish", log)
+def prebuild(test_list):
+    log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
+    meta.start_stage(meta.STG.PREBUILD.name, log)
     cmd = '''\
 export ROOT={0}
 echo -e "-- STAGE build_tools --"
@@ -177,7 +201,7 @@ echo -e "-- STAGE build_test_generator --"
     logger.debug(cmd)
     ret = os.system(cmd)
     if ret != 0: 
-      logger.error("Source publish failed! \n  CMD: {0}".format(cmd)) 
+      logger.error("Prebuild failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
       raise Exception("Die run_test.py!")
     meta.update_status("PASS")
@@ -185,9 +209,8 @@ echo -e "-- STAGE build_test_generator --"
 # -------------------------------
 def vsc_compile():
     # Stage 1 VCS compile
-    global meta
     log = "{_simdir_stg1}/vcs_compile.log".format(_simdir_stg1=simdir_stg1) 
-    meta.register_stage("Stage 1 VCS compile", log)
+    meta.start_stage(meta.STG.SIM_BUILD_1.name, log)
     logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {4}".format(simdir_stg1, tbdir, pubdir, sv, log)
@@ -199,7 +222,7 @@ def vsc_compile():
     meta.update_status("PASS")
     # Stage 2 VCS compile
     log = "{_simdir}/vcs_compile.log".format(_simdir=simdir) 
-    meta.register_stage("Stage 1 VCS compile", log)
+    meta.start_stage(meta.STG.SIM_BUILD_2.name, log)
     logger.info('   --> Stage 2 VCS compile')
     cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
     ret = os.system(cmd)
@@ -219,9 +242,8 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
 
     # Stage 1 VCS run
     if (not j_sim_run):
-      global meta
       log = os.path.join(test_rundir, "stg1_vcs_run.log")
-      meta.register_test_stage("Stage 1 VCS run", test, log)
+      meta.start_test_stage(meta.TEST_STG.VCS_RUN_1.name, test, log)
       msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
       logger.info(msg)
       run_log_file.write(msg+"\n");
@@ -252,7 +274,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
     # TTX generation
     log = os.path.join(test_rundir, "ttx_gen.log")
-    meta.register_test_stage("TTX generation", test, log)
+    meta.start_test_stage(meta.TEST_STG.TTX_GEN.name, test, log)
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -268,7 +290,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # CKTI
     log = os.path.join(test_rundir, "ckti.log")
-    meta.register_test_stage("CKTI", test, log)
+    meta.start_test_stage(meta.TEST_STG.CKTI.name, test, log)
     msg = '   --> [{}: {}] CKTI'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -284,7 +306,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # Stage 2 VCS run
     log = os.path.join(test_rundir, "vcs_run.log")
-    meta.register_test_stage("Stage 2 VCS run", test, log)
+    meta.start_test_stage(meta.TEST_STG.VCS_RUN_2.name, test, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -304,7 +326,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
 def vsc_run(test_list, args):
     id = 0
     log = os.path.join(rundir, test, "test_run.log")
-    meta.register_stage("Simulation run", log)
+    meta.start_stage(meta.STG.SIM_RUN.name, log)
     meta.update_status("FAIL")
     for test,ttx in sorted(test_list["ttx"].items()):
         if (args["dump"]):  test_list["args"][test] += " --vcdfile=waveform.vcd"
@@ -379,11 +401,14 @@ def main():
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_list = get_test_list(yml, args["test"], args["when"], args["args"])
     logger.info(" Found tests: " + str(sorted(test_list["ttx"].keys())))
+    # STEP 0+: Update meta
+    global meta
+    meta = Meta(test_list["suite"])
 
-    # STEP 1: Source publish
+    # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
-      logger.info(' STEP 1: Source publish')
-      source_publish(test_list)
+      logger.info(' STEP 1: Prebuild libraries')
+      prebuild(test_list)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):

@@ -5,6 +5,7 @@ templates:
   __sfunc_t : &__sfunc_t
     <<: *__math_t
     Description : "Template for math sfunc tests."
+    _suite : sfunc
     _ttx : single-core-sfunc
     _constr_class : constraints_suite_sfunc
     _constr_grps  : &__sfunc_t__constr_grps

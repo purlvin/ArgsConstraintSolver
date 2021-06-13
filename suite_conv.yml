@@ -5,6 +5,7 @@ templates:
   __conv_t : &__conv_t
     <<: *__math_t
     Description : "Template for math convolution tests."
+    _suite : conv
     _ttx : single-core-conv
     _constr_class : constraints_suite_conv
     _constr_grps  : &__conv_t__constr_grps
