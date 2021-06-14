@@ -29,6 +29,14 @@ def construct_email_context(meta):
 </table>
 </br>
 '''.format(_color="green" if (status == "PASS") else "red", _status=status, _stage=meta.stages["current"], _id=meta.id, _host=host, _root=root, _git_hash=git_hash, _git_branch=git_branch, _cmdline=meta.cmdline())
+    #   -> Sanity summary
+    total = len(meta.test_stages)
+    failed= len([hash["stages"][0] for test,hash in meta.test_stages.items() if hash["stages"][0]['status']=="FAIL"])
+    email_body += '''\
+<b>SANITY SUMMARY: </b>
+<table><tr><th>TOTAL</th><th>PASSED</th><th>FAILED</th>
+<tr><td>{_total}</td><td>{_passed}</td><td>{_failed}</td></tr></table>
+'''.format(_total=total, _passed=total-failed, _failed=failed)
     #   -> Stage summary
     rows = ["", ""]
     for s in meta.STG:
@@ -41,14 +49,6 @@ def construct_email_context(meta):
 <table><tr>{_stage_list}</tr>
 <tr>{_status_list}</tr></table>
 '''.format(_stage_list=rows[0], _status_list=rows[1])
-    #   -> Sanity summary
-    total = len(meta.test_stages)
-    failed= len([hash["stages"][0] for test,hash in meta.test_stages.items() if hash["stages"][0]['status']=="FAIL"])
-    email_body += '''\
-<b>SANITY SUMMARY: </b>
-<table><tr><th>TOTAL</th><th>PASSED</th><th>FAILED</th>
-<tr><td>{_total}</td><td>{_passed}</td><td>{_failed}</td></tr></table>
-'''.format(_total=total, _passed=total-failed, _failed=failed)
     #   -> Primary test status
     rows = ""
     for test,hash in meta.test_stages.items():
@@ -75,7 +75,7 @@ def send_email(meta, test_list, args):
     user         = os.environ.get('USER')
     subject,body = construct_email_context(meta)
     body = '''\
-To: {_user}@atlmail.amd.com
+To: {_user}@atlmail.amd.com,{_user}@tenstorrent.com
 Subject: {_subject}
 Content-Type: text/html
 

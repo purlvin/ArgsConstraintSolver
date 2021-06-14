@@ -10,7 +10,7 @@ import time
 import logging;
 from enum import Enum   
 from datetime import datetime
-from run_lib  import send_email
+from lib_email  import send_email
 
 # -------------------------------
 # Path variables
