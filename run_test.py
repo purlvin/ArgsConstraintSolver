@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import glob, shutil, psutil, os, sys, signal
+import glob, shutil, os, sys, signal
 from multiprocessing import Process
 import subprocess
 import yaml
@@ -47,8 +47,7 @@ class Meta:
     def id(self):
         return self.id
     def cmdline(self):
-        process = psutil.Process(os.getpid())
-        cmdline = process.cmdline()
+        cmdline = sys.argv
         return " ".join(cmdline)
     def run_subprocess(self, cmd):
         ret = {}
@@ -89,7 +88,6 @@ class Meta:
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
         status = [s["status"] for s in self.test_stages[test]["stages"] if s['stage'] == stage][0]
         return status
-
 
 
 class Colors:
@@ -256,10 +254,11 @@ def testRunInParallel(id, test, seed, spec, args):
       meta.update_test_status(test, "PASS")
     # Paring .cfg files
     for x in ["genargs", "plusargs"] :
-        cfg = os.path.join(test_rundir, x + "_rnd.cfg")
+        cfg = os.path.join(test_rundir, x + ".cfg")
         f = open(cfg, "r")
         cfg_args[x] = f.read().strip().split("\n")
         cfg_hash[x] = {}
+        f.close
     cfg_args["genargs"]  += [ "--{}".format(arg) for arg in args["genargs"]]
     cfg_args["plusargs"] += [ "+{}".format(arg) for arg in args["plusargs"]]
     for k,v in cfg_args.items():
@@ -268,8 +267,14 @@ def testRunInParallel(id, test, seed, spec, args):
             a = x.split("=")
             cfg_hash[k][a[0]] = a[1] if len(a)>1 else None
         cfg_args[k] = ""
-        for kk,vv in cfg_hash[k].items():
+        for kk,vv in sorted(cfg_hash[k].items()):
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
+    for x in ["genargs", "plusargs"] :
+        cfg = os.path.join(test_rundir, x + ".cfg")
+        f = open(cfg, "w")
+        f.writelines(cfg_args[x].strip().replace(" ", "\n"));
+        f.close
+
     # TTX generation
     log = os.path.join(test_rundir, "ttx_gen.log")
     meta.start_test_stage(test, meta.TEST_STG.TTX_GEN.name, log)
@@ -411,12 +416,12 @@ def main():
     # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
       logger.info(' STEP 1: Prebuild libraries')
-      prebuild(test_spec)
+      #FIXME: prebuild(test_spec)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):
       logger.info(' STEP 2: VCS compile')
-      vsc_compile()
+      #FIXME: vsc_compile()
    
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
