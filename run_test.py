@@ -39,10 +39,10 @@ class Meta:
     test_stages = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
     def __init__(self, test_suite):
         self.id = random.getrandbits(32)
-        self.stages            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
+        self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,suite in sorted(test_suite.items()): 
-            self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": suite, "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
+            self.test_stages[test]            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": suite, "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
             self.test_stages[test]["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.TEST_STG]
     def id(self):
         return self.id
@@ -65,9 +65,9 @@ class Meta:
     def stage_status(self, stage):
         status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
         return status
-    def start_test_stage(self, test, stage):
+    def start_test_stage(self, test, stage, log):
         self.test_stages[test]["current"] = stage
-        i = self.update_status(test, "RUNNING")
+        i = self.update_test_status(test, "RUNNING")
         self.test_stages[test]["stages"][i]["log"] = log
     def update_test_status(self, test, status):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
@@ -209,6 +209,8 @@ echo -e "-- STAGE build_test_generator --"
 
 # -------------------------------
 def vsc_compile():
+    for dir in [simdir, simdir_stg1]:
+      os.makedirs(dir, exist_ok=True)
     # Stage 1 VCS compile
     log = "{_simdir_stg1}/vcs_compile.log".format(_simdir_stg1=simdir_stg1) 
     meta.start_stage(meta.STG.SIM_BUILD_1.name, log)
@@ -244,12 +246,14 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     # Stage 1 VCS run
     if (not j_sim_run):
       log = os.path.join(test_rundir, "stg1_vcs_run.log")
-      meta.start_test_stage(meta.TEST_STG.VCS_RUN_1.name, test, log)
+      meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
       msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
       logger.info(msg)
       run_log_file.write(msg+"\n");
       cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
-      ret = os.system(cmd) or ("Error" in open(log).read())
+      ret = subprocess.run(["/usr/bin/bash"], input=cmd.encode()).returncode
+      #ret = os.system(cmd) or ("Error" in open(log).read())
+      ret = ("Error" in open(log).read())
       if ret != 0:
         msg = " [{}]: {} : Stage 1 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
         logger.error(msg) 
@@ -275,12 +279,14 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
     # TTX generation
     log = os.path.join(test_rundir, "ttx_gen.log")
-    meta.start_test_stage(meta.TEST_STG.TTX_GEN.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.TTX_GEN.name, log)
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
     cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
-    ret = os.system(cmd)
+    ret = subprocess.run(["/usr/bin/bash"], input=cmd.encode()).returncode
+    print(ret)
+    #ret = os.system(cmd)
     if ret != 0:
       msg = " [{}]: {} : TTX generation failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
@@ -291,12 +297,13 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # CKTI
     log = os.path.join(test_rundir, "ckti.log")
-    meta.start_test_stage(meta.TEST_STG.CKTI.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.CKTI.name, log)
     msg = '   --> [{}: {}] CKTI'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
     cmd = "  cd {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2} &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
-    ret = os.system(cmd)
+    #ret = os.system(cmd)
+    ret = subprocess.run(["/usr/bin/bash"], input=cmd.encode()).returncode
     if ret != 0:
       msg = " [{}]: {} : CKTI failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
@@ -307,7 +314,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # Stage 2 VCS run
     log = os.path.join(test_rundir, "vcs_run.log")
-    meta.start_test_stage(meta.TEST_STG.VCS_RUN_2.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -326,14 +333,14 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     run_log_file.close()
 def vsc_run(test_list, args):
     id = 0
-    log = os.path.join(rundir, test, "test_run.log")
-    meta.start_stage(meta.STG.SIM_RUN.name, log)
-    meta.update_status("FAIL")
     for test,ttx in sorted(test_list["ttx"].items()):
+        log = os.path.join(rundir, test, "test_run.log")
+        meta.start_stage(meta.STG.SIM_RUN.name, log)
+        meta.update_status("FAIL")
         if (args["dump"]):  test_list["args"][test] += " --vcdfile=waveform.vcd"
         if (args["debug"]): test_list["args"][test] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "sanity") else random.getrandbits(32)
-        p = Process(target=testRunInParallel, args=(id, test, test_list["base"][test], ttx, seed, test_list["args"][test], args['j_sim_run']))
+        p = Process(target=testRunInParallel, name=test, args=(id, test, test_list["base"][test], ttx, seed, test_list["args"][test], args['j_sim_run']))
         p.start()
         proc.append(p)
         id += 1
@@ -360,7 +367,9 @@ def result_report(test_list):
 
 # -------------------------------
 def signal_handler(sig, frame):
-    for p in proc: p.terminate()
+    for p in proc: 
+      logger.info("\n  Killing process '{}'({})".format(p.name, p.pid))
+      p.kill()
 def main():
     os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
@@ -414,7 +423,7 @@ def main():
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):
       logger.info(' STEP 2: VCS compile')
-      vsc_compile()
+      #FIXME: vsc_compile()
    
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
