@@ -2,8 +2,7 @@
 
 import argparse
 import re
-import os
-import sys
+import os, sys, platform
 import pymongo
 import collections
 import operator

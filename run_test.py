@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import glob, shutil, os, sys, signal
+import glob, shutil, os, sys 
 from multiprocessing import Process
 import subprocess
 import yaml

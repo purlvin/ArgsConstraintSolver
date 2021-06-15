@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os
+import os, platform
 import subprocess
 import random
 import time
@@ -10,7 +10,7 @@ from datetime import datetime
 def construct_email_context(meta):
     status      = meta.stages["stages"][0]["status"]
     root        = os.environ.get('ROOT')
-    host        = os.environ.get('HOST')
+    host        = platform.node()
     git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
     git_hash    = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
     #Subject
