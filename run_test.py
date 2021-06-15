@@ -39,7 +39,7 @@ class Meta:
     test_stages = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
     def __init__(self, test_spec):
         self.id = random.getrandbits(32)
-        self.stages            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
+        self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,spec in sorted(test_spec.items()): 
             self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
@@ -73,9 +73,9 @@ class Meta:
     def stage_status(self, stage):
         status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
         return status
-    def start_test_stage(self, test, stage):
+    def start_test_stage(self, test, stage, log):
         self.test_stages[test]["current"] = stage
-        i = self.update_status(test, "RUNNING")
+        i = self.update_test_status(test, "RUNNING")
         self.test_stages[test]["stages"][i]["log"] = log
     def update_test_status(self, test, status):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
@@ -135,7 +135,7 @@ class ColorFormatter(logging.Formatter):
         record.relativeCreated /= 1000
         return formatter.format(record)
 # -------------------------------
-def get_test_spec(yml, tgt_test, tgt_group, tgt_args):
+def get_test_spec(yml, tgt_test, tgt_group):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
     test_spec = {}
@@ -146,7 +146,7 @@ def get_test_spec(yml, tgt_test, tgt_group, tgt_args):
             "base":     test,
             "suite":    test_hash["_suite"],
             "ttx":      test_hash["_ttx"],
-            "args":     flatten_list(test_hash["_args"]) + tgt_args,
+            "args":     flatten_list(test_hash["_args"]),
         }
         if ((tgt_test) and (tgt_test.split("__")[0] == test)):
             test_spec[tgt_test] = info
@@ -202,6 +202,8 @@ echo -e "-- STAGE build_test_generator --"
 
 # -------------------------------
 def vsc_compile():
+    for dir in [simdir, simdir_stg1]:
+      os.makedirs(dir, exist_ok=True)
     # Stage 1 VCS compile
     log = "{_simdir_stg1}/vcs_compile.log".format(_simdir_stg1=simdir_stg1) 
     meta.start_stage(meta.STG.SIM_BUILD_1.name, log)
@@ -227,7 +229,8 @@ def vsc_compile():
     meta.update_status("PASS")
 
 # -------------------------------
-def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
+def testRunInParallel(id, test, seed, spec, args):
+    (base, ttx, j_sim_run) = (spec["base"], spec["ttx"], args["j_sim_run"])
     cfg_args = {}
     cfg_hash = {}
     test_rundir = os.path.join(rundir, test)
@@ -237,7 +240,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     # Stage 1 VCS run
     if (not j_sim_run):
       log = os.path.join(test_rundir, "stg1_vcs_run.log")
-      meta.start_test_stage(meta.TEST_STG.VCS_RUN_1.name, test, log)
+      meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
       msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
       logger.info(msg)
       run_log_file.write(msg+"\n");
@@ -269,7 +272,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
             cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
     # TTX generation
     log = os.path.join(test_rundir, "ttx_gen.log")
-    meta.start_test_stage(meta.TEST_STG.TTX_GEN.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.TTX_GEN.name, log)
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -285,7 +288,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # CKTI
     log = os.path.join(test_rundir, "ckti.log")
-    meta.start_test_stage(meta.TEST_STG.CKTI.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.CKTI.name, log)
     msg = '   --> [{}: {}] CKTI'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -301,7 +304,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     # Stage 2 VCS run
     log = os.path.join(test_rundir, "vcs_run.log")
-    meta.start_test_stage(meta.TEST_STG.VCS_RUN_2.name, test, log)
+    meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
     run_log_file.write(msg+"\n");
@@ -321,14 +324,15 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     run_log_file.close()
 def vsc_run(test_spec, args):
     id = 0
-    log = os.path.join(rundir, test, "test_run.log")
-    meta.start_stage(meta.STG.SIM_RUN.name, log)
-    meta.update_status("FAIL")
     for test,spec in sorted(test_spec.items()):
+        log = os.path.join(rundir, test, "test_run.log")
+        meta.start_stage(meta.STG.SIM_RUN.name, log)
+        meta.update_status("FAIL")
         if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
         if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "sanity") else random.getrandbits(32)
-        p = Process(target=testRunInParallel, name=test, args=(id, test, spec["base"], spec["ttx"], seed, spec["args"], args['j_sim_run']))
+        #p = Process(target=testRunInParallel, name=test, args=(id, test, spec["base"], ttx, seed, spec["args"], args['j_sim_run']))
+        p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
         p.start()
         meta.proc.append(p)
         id += 1
@@ -348,14 +352,16 @@ def result_report(test_spec):
             logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "")) 
         else:
             logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "(run_log: {0})".format(run_log)))
-            meta.update_test_status(test, "FAIL")
+            #meta.update_test_status(test, "FAIL")
             stage_status = "FAIL"
         id += 1
     meta.update_status(stage_status)
 
 # -------------------------------
 def signal_handler(sig, frame):
-    for p in meta.proc: p.terminate()
+    for p in proc: 
+      logger.info("\n  Killing process '{}'({})".format(p.name, p.pid))
+      p.terminate()
 def main():
     os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
@@ -396,7 +402,7 @@ def main():
     cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
-    test_spec = get_test_spec(yml, args["test"], args["when"], args["plusargs"])
+    test_spec = get_test_spec(yml, args["test"], args["when"])
     logger.info(" Found tests: " + str(sorted(test_spec.keys())))
     # STEP 0+: Update meta
     global meta
