@@ -71,7 +71,7 @@ def construct_email_context(meta):
     email_body = email_body_header + email_body + email_end_tags;
     return (email_subject, email_body);
 
-def send_email(meta, test_list, args):
+def send_email(meta):
     user         = os.environ.get('USER')
     subject,body = construct_email_context(meta)
     body = '''\

@@ -5,8 +5,8 @@ import math
 import re
 import sys
 import os
-import pprint
 import copy
+from pprint import pprint
 
 def get_test_spec(yml, outdir):
     spec = {"constraints": {}, "tests": {}}

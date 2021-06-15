@@ -26,23 +26,23 @@ simdir_stg1 = os.path.join(simdir,  "stg1")
 rundir      = os.path.join(outdir,  "run")
 logger      = logging.getLogger()
 log         = os.path.join(outdir,  "run_test.log")
-proc        = []
 
 
 # -------------------------------
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
-
+    
+    proc        = []
     start_time  = time.time()
     stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
     test_stages = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
-    def __init__(self, test_suite):
+    def __init__(self, test_spec):
         self.id = random.getrandbits(32)
         self.stages            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
-        for test,suite in sorted(test_suite.items()): 
-            self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": suite, "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
+        for test,spec in sorted(test_spec.items()): 
+            self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
             self.test_stages[test]["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.TEST_STG]
     def id(self):
         return self.id
@@ -50,6 +50,14 @@ class Meta:
         process = psutil.Process(os.getpid())
         cmdline = process.cmdline()
         return " ".join(cmdline)
+    def run_subprocess(self, cmd):
+        ret = {}
+        p = subprocess.Popen(cmd, shell=True)
+        self.proc.append(p.pid)
+        ret["stdout"], ret["stderr"] = p.communicate()
+        ret["returncode"] = p.returncode
+        print(cmd, ret, self.proc)
+        return ret
     def start_stage(self, stage, log):
         self.stages["current"] = stage
         i = self.update_status("RUNNING")
@@ -82,6 +90,8 @@ class Meta:
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
         status = [s["status"] for s in self.test_stages[test]["stages"] if s['stage'] == stage][0]
         return status
+
+
 
 class Colors:
     """ ANSI color codes """
@@ -125,42 +135,25 @@ class ColorFormatter(logging.Formatter):
         record.relativeCreated /= 1000
         return formatter.format(record)
 # -------------------------------
-def get_test_list(yml, tgt_test, tgt_group, tgt_args):
+def get_test_spec(yml, tgt_test, tgt_group, tgt_args):
     spec = yaml.load(open(yml), Loader=yaml.SafeLoader)
     # Load constraint groups per test
-    tests = {"suite": {}, "groups": {}, "ttx": {}, "args": {}}
+    test_spec = {}
     for test,test_hash in spec["testcases"].items():
         def flatten_list(irregular_list):
             return [element for item in irregular_list for element in flatten_list(item)] if type(irregular_list) is list else [irregular_list]
-        tests["suite"][test]= test_hash["_suite"]
-        tests["ttx"][test]  = test_hash["_ttx"]
-        tests["args"][test] = flatten_list(test_hash["_args"]) + tgt_args
-        for group in flatten_list(test_hash["_when"]):
-            if group not in tests["groups"]: tests["groups"][group] = {}
-            tests["groups"][group][test] = test_hash["_clones"] if ("_clones" in test_hash) else 1
-    global test_list
-    test_list = {"suite": {}, "base": {}, "ttx": {}, "args": {}}
-    # Generate test list 
-    if (tgt_test) :
-        if tgt_test not in tests['ttx'].keys(): 
-          logger.error("Invalid test name '{}'!".format(tgt_test)) 
-          raise Exception("Die run_test.py!")
-        test_list["suite"][tgt_test]= tests['suite'][tgt_test]
-        test_list["base"][tgt_test] = tgt_test
-        test_list["ttx"][tgt_test]  = tests['ttx'][tgt_test]
-        test_list["args"][tgt_test] = tests['args'][tgt_test]
-    else :
-        if tgt_group not in tests['groups']: 
-          logger.error("Invalid when tag '{}'!".format(tgt_group))
-          raise Exception("Die run_test.py!")
-        val = tests['groups'][tgt_group]
-        for k,v in val.items():
-            for i in range(v):
-                test_list["suite"][k+"_"+str(i)]= tests['suite'][k]
-                test_list["base"][k+"_"+str(i)] = k
-                test_list["ttx"][k+"_"+str(i)]  = tests['ttx'][k]
-                test_list["args"][k+"_"+str(i)] = tests['args'][k]
-    return test_list
+        info = {
+            "base":     test,
+            "suite":    test_hash["_suite"],
+            "ttx":      test_hash["_ttx"],
+            "args":     flatten_list(test_hash["_args"]) + tgt_args,
+        }
+        if ((tgt_test) and (tgt_test.split("__")[0] == test)):
+            test_spec[tgt_test] = info
+        elif (tgt_group in flatten_list(test_hash["_when"])):
+            test_spec[test] = info
+            for i in range(test_hash["_clones"]): test_spec["{}__{}".format(test,i+1)] = info
+    return test_spec
 
 # -------------------------------
 def env_cleanup():
@@ -174,7 +167,7 @@ def env_cleanup():
     if os.path.exists(outdir): shutil.rmtree(outdir)
 
 # -------------------------------
-def prebuild(test_list):
+def prebuild(test_spec):
     log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
     meta.start_stage(meta.STG.PREBUILD.name, log)
     cmd = '''\
@@ -191,7 +184,7 @@ echo -e "-- STAGE build_firmware --"
 cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
-    for ttx in list(set(test_list["ttx"].values())):
+    for ttx in list(set([spec["ttx"] for test,spec in test_spec.items()])):
     	cmd += "cd $ROOT/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR=$ROOT/out/pub/ttx/{ttx} TEST={ttx} generator firmware\n".format(ttx=ttx)
     sh = os.path.join(pubdir, "tb_build.sh")
     f = open(sh, "w")
@@ -200,7 +193,7 @@ echo -e "-- STAGE build_test_generator --"
     logger.debug('  -> Building testbench : {0}'.format(sh))
     cmd = "  source {0} &> {1} ".format(sh, log)
     logger.debug(cmd)
-    ret = os.system(cmd)
+    ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0: 
       logger.error("Prebuild failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -215,7 +208,7 @@ def vsc_compile():
     logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {4}".format(simdir_stg1, tbdir, pubdir, sv, log)
-    ret = os.system(cmd)
+    ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 1 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -226,7 +219,7 @@ def vsc_compile():
     meta.start_stage(meta.STG.SIM_BUILD_2.name, log)
     logger.info('   --> Stage 2 VCS compile')
     cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
-    ret = os.system(cmd)
+    ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -249,7 +242,8 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
       logger.info(msg)
       run_log_file.write(msg+"\n");
       cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
-      ret = os.system(cmd) or ("Error" in open(log).read())
+      ret  = meta.run_subprocess(cmd)["returncode"]
+      ret |= 1 if ("Error" in open(log).read()) else 0
       if ret != 0:
         msg = " [{}]: {} : Stage 1 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
         logger.error(msg) 
@@ -280,7 +274,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     logger.info(msg)
     run_log_file.write(msg+"\n");
     cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
-    ret = os.system(cmd)
+    ret  = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : TTX generation failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
@@ -296,7 +290,7 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     logger.info(msg)
     run_log_file.write(msg+"\n");
     cmd = "  cd {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2} &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
-    ret = os.system(cmd)
+    ret  = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : CKTI failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
@@ -312,8 +306,9 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     logger.info(msg)
     run_log_file.write(msg+"\n");
     vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-    cmd = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
-    ret = os.system(cmd) or (not "<TEST-PASSED>" in open(vcs_run_log).read())
+    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+    ret  = meta.run_subprocess(cmd)["returncode"]
+    ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
     if ret != 0:
       msg = " [{}]: {} : Stage 2 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
@@ -324,28 +319,28 @@ def testRunInParallel(id, test, base, ttx, seed, args, j_sim_run):
     meta.update_test_status(test, "PASS")
     run_log_file.write("<TEST-PASSED>");
     run_log_file.close()
-def vsc_run(test_list, args):
+def vsc_run(test_spec, args):
     id = 0
     log = os.path.join(rundir, test, "test_run.log")
     meta.start_stage(meta.STG.SIM_RUN.name, log)
     meta.update_status("FAIL")
-    for test,ttx in sorted(test_list["ttx"].items()):
-        if (args["dump"]):  test_list["args"][test] += " --vcdfile=waveform.vcd"
-        if (args["debug"]): test_list["args"][test] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
+    for test,spec in sorted(test_spec.items()):
+        if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
+        if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "sanity") else random.getrandbits(32)
-        p = Process(target=testRunInParallel, args=(id, test, test_list["base"][test], ttx, seed, test_list["args"][test], args['j_sim_run']))
+        p = Process(target=testRunInParallel, name=test, args=(id, test, spec["base"], spec["ttx"], seed, spec["args"], args['j_sim_run']))
         p.start()
-        proc.append(p)
+        meta.proc.append(p)
         id += 1
-    for p in proc:
+    for p in meta.proc:
         p.join()
 
 # -------------------------------
-def result_report(test_list):
+def result_report(test_spec):
     results = {}
     id = 0
     stage_status = "PASS"
-    for test in sorted(test_list["ttx"].keys()):
+    for test in sorted(test_spec.keys()):
         results[test] = Colors.RED + "FAIL" + Colors.END
         run_log = os.path.join(rundir, test, "test_run.log")
         if ("<TEST-PASSED>" in open(run_log).read()): 
@@ -360,7 +355,7 @@ def result_report(test_list):
 
 # -------------------------------
 def signal_handler(sig, frame):
-    for p in proc: p.terminate()
+    for p in meta.proc: p.terminate()
 def main():
     os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
@@ -377,7 +372,8 @@ def main():
     ap.add_argument("test", nargs='?',       help="Test name")
     ap.add_argument("-w",   "--when",        help="When groups nane")
     ap.add_argument("-s",   "--seed",        help="Seed")
-    ap.add_argument('-a',   '--args',        type=str, nargs='*', default=[], help="Sim run args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
+    ap.add_argument('-ga',  "--genargs",     type=str, nargs='*', default=[], help="TTX args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
+    ap.add_argument('-pa',  "--plusargs",    type=str, nargs='*', default=[], help="Sim run args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
@@ -400,16 +396,16 @@ def main():
     cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
-    test_list = get_test_list(yml, args["test"], args["when"], args["args"])
-    logger.info(" Found tests: " + str(sorted(test_list["ttx"].keys())))
+    test_spec = get_test_spec(yml, args["test"], args["when"], args["plusargs"])
+    logger.info(" Found tests: " + str(sorted(test_spec.keys())))
     # STEP 0+: Update meta
     global meta
-    meta = Meta(test_list["suite"])
+    meta = Meta(test_spec)
 
     # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
       logger.info(' STEP 1: Prebuild libraries')
-      prebuild(test_list)
+      prebuild(test_spec)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):
@@ -419,11 +415,11 @@ def main():
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
     signal.signal(signal.SIGINT, signal_handler)
-    vsc_run(test_list, args)
+    vsc_run(test_spec, args)
 
     # STEP 4: Result report
     logger.info(' STEP 4: Result report')
-    result_report(test_list)
+    result_report(test_spec)
 
 
 if __name__ == "__main__":
@@ -431,4 +427,4 @@ if __name__ == "__main__":
         main()
     finally:
         logger.info(' Sending Email...')
-        send_email(meta, test_list, args)
+        send_email(meta)
