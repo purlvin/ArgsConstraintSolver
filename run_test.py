@@ -362,11 +362,6 @@ def result_report(test_spec):
     meta.update_status(stage_status)
 
 # -------------------------------
-def signal_handler(sig, frame):
-    for p in meta.proc: 
-      logger.info("\n  Killing process '{}'({})".format(p.name, p.pid))
-      p.kill()
-      os.system("killall -9 simv") #FIXME: 
 def main():
     os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
@@ -416,16 +411,15 @@ def main():
     # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
       logger.info(' STEP 1: Prebuild libraries')
-      #FIXME: prebuild(test_spec)
+      prebuild(test_spec)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):
       logger.info(' STEP 2: VCS compile')
-      #FIXME: vsc_compile()
+      vsc_compile()
    
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
-    signal.signal(signal.SIGINT, signal_handler)
     vsc_run(test_spec, args)
 
     # STEP 4: Result report
@@ -436,6 +430,15 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        logger.info('\n  Ctrl-c triggered...')
+        for p in meta.proc: 
+          logger.info("  Killing process '{}'({})".format(p.name, p.pid))
+          p.kill()
+          os.system("killall -9 simv") #FIXME: 
+
     finally:
-        logger.info(' Sending Email...')
-        send_email(meta)
+        if 'meta' in globals():
+            logger.info(' Sending Email...')
+            send_email(meta)
+
