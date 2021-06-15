@@ -53,10 +53,9 @@ class Meta:
     def run_subprocess(self, cmd):
         ret = {}
         p = subprocess.Popen(cmd, shell=True)
-        self.proc.append(p.pid)
+        self.proc.append(p)
         ret["stdout"], ret["stderr"] = p.communicate()
         ret["returncode"] = p.returncode
-        print(cmd, ret, self.proc)
         return ret
     def start_stage(self, stage, log):
         self.stages["current"] = stage
@@ -152,7 +151,8 @@ def get_test_spec(yml, tgt_test, tgt_group):
             test_spec[tgt_test] = info
         elif (tgt_group in flatten_list(test_hash["_when"])):
             test_spec[test] = info
-            for i in range(test_hash["_clones"]): test_spec["{}__{}".format(test,i+1)] = info
+            if ("_clones" in test_hash): 
+                for i in range(test_hash["_clones"]): test_spec["{}__{}".format(test,i+1)] = info
     return test_spec
 
 # -------------------------------
@@ -192,7 +192,6 @@ echo -e "-- STAGE build_test_generator --"
     f.close()
     logger.debug('  -> Building testbench : {0}'.format(sh))
     cmd = "  source {0} &> {1} ".format(sh, log)
-    logger.debug(cmd)
     ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0: 
       logger.error("Prebuild failed! \n  CMD: {0}".format(cmd)) 
@@ -310,7 +309,7 @@ def testRunInParallel(id, test, seed, spec, args):
     logger.info(msg)
     run_log_file.write(msg+"\n");
     vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none '+event_db=1 +data_reg_mon_enable=1' +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
     ret  = meta.run_subprocess(cmd)["returncode"]
     ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
     if ret != 0:
@@ -331,13 +330,13 @@ def vsc_run(test_spec, args):
         meta.update_status("FAIL")
         if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
         if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
-        seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "sanity") else random.getrandbits(32)
+        seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
         p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
         p.start()
         meta.proc.append(p)
         id += 1
     for p in meta.proc:
-        p.join()
+      if isinstance(p, Process): p.join()
 
 # -------------------------------
 def result_report(test_spec):
@@ -359,9 +358,10 @@ def result_report(test_spec):
 
 # -------------------------------
 def signal_handler(sig, frame):
-    for p in proc: 
+    for p in meta.proc: 
       logger.info("\n  Killing process '{}'({})".format(p.name, p.pid))
-      p.terminate()
+      p.kill()
+      os.system("killall -9 simv") #FIXME: 
 def main():
     os.makedirs(outdir, exist_ok=True)
     if os.path.exists(log): shutil.move(log, log+".old")
@@ -387,7 +387,7 @@ def main():
     ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
     global args
     args = vars(ap.parse_args())
-    if not (args["test"] or args["when"]): args["when"] = "sanity"
+    if not (args["test"] or args["when"]): args["when"] = "quick"
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))

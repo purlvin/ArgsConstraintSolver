@@ -5,8 +5,8 @@ import math
 import re
 import sys
 import os
+import pprint
 import copy
-from pprint import pprint
 
 def get_test_spec(yml, outdir):
     spec = {"constraints": {}, "tests": {}}
@@ -41,7 +41,7 @@ def get_test_spec(yml, outdir):
                 m = re.match(r'(\w+)\s*\[(\d+)\]', v)
                 if (m):
                     v, n = m.groups()
-                if (k == "e_int_local") or (k == "e_switch_local"): continue
+                if (re.match(r'e_.*_local', k)) : continue
                 k = "{0}:{1}".format(k,n)
                 constraints["class"][class_name]["vars"][v] = k
             # Constraint
