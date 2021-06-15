@@ -261,7 +261,8 @@ def testRunInParallel(id, test, seed, spec, args):
         f = open(cfg, "r")
         cfg_args[x] = f.read().strip().split("\n")
         cfg_hash[x] = {}
-    cfg_args["plusargs"] += args
+    cfg_args["genargs"]  += [ "--{}".format(arg) for arg in args["genargs"]]
+    cfg_args["plusargs"] += [ "+{}".format(arg) for arg in args["plusargs"]]
     for k,v in cfg_args.items():
         k = k.split(".")[0]
         for x in v:
@@ -331,7 +332,6 @@ def vsc_run(test_spec, args):
         if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
         if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "sanity") else random.getrandbits(32)
-        #p = Process(target=testRunInParallel, name=test, args=(id, test, spec["base"], ttx, seed, spec["args"], args['j_sim_run']))
         p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
         p.start()
         meta.proc.append(p)
@@ -378,8 +378,8 @@ def main():
     ap.add_argument("test", nargs='?',       help="Test name")
     ap.add_argument("-w",   "--when",        help="When groups nane")
     ap.add_argument("-s",   "--seed",        help="Seed")
-    ap.add_argument('-ga',  "--genargs",     type=str, nargs='*', default=[], help="TTX args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
-    ap.add_argument('-pa',  "--plusargs",    type=str, nargs='*', default=[], help="Sim run args example: -a +<ARG1>=<VALUE> +<ARG2>=<VALUE>")
+    ap.add_argument('-ga',  "--genargs",     type=str, nargs='*', default=[], help="TTX args example: -a <ARG1>=<VALUE> <ARG2>=<VALUE>")
+    ap.add_argument('-pa',  "--plusargs",    type=str, nargs='*', default=[], help="Sim run args example: -a <ARG1>=<VALUE> <ARG2>=<VALUE>")
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
