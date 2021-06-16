@@ -78,7 +78,7 @@ def send_email(meta):
     user         = os.environ.get('USER')
     subject,body = construct_email_context(meta)
     body = '''\
-To: {_user}@tenstorrent.com, mchit@tenstorrent.com
+To: {_user}@mkdcmail.amd.com
 Subject: {_subject}
 Content-Type: text/html
 

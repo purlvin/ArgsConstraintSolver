@@ -13,6 +13,7 @@ from pprint import pprint
 from datetime import datetime
 from lib_email  import send_email
 
+print(sys.version)
 # -------------------------------
 # Path variables
 root        = os.environ.get("ROOT")
@@ -62,6 +63,10 @@ class Meta:
         self.stages["current"] = stage
         i = self.update_status("RUNNING")
         self.stages["stages"][i]["log"] = log
+        
+        self.debug = 22
+        Meta.debug = 33 
+        
     def update_status(self, status):
         i = [self.stages["stages"].index(stage) for stage in self.stages["stages"] if stage['stage'] == self.stages["current"]][0]
         self.stages["stages"][i]["status"]   = status
@@ -69,6 +74,7 @@ class Meta:
         if (status == "FAIL"): self.stages["stages"][0]["status"]   = status
         self.stages["stages"][0]["duration"] = self.stages["stages"][i]["duration"]
         print("DEBU(update_status)", self.stages["current"], status)
+        pprint(self.stages)
         return i
     def stage_status(self, stage):
         status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
@@ -85,9 +91,6 @@ class Meta:
         if (status == "FAIL"): self.test_stages[test]["stages"][0]["status"] = status
         self.test_stages[test]["stages"][0]["duration"] = self.test_stages[test]["stages"][i]["duration"]
         print("DEBU(update_test_status)", test, self.test_stages[test]["current"], status, self.test_stages[test]["stages"][0]["duration"])
-        self.debug = 22
-        Meta.debug = 33 
-        
         return i
     def test_stage_status(self, test, stage):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
@@ -469,7 +472,7 @@ if __name__ == "__main__":
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
-            pprint(meta.test_stages) #FIXME:
+            pprint(meta.stages) #FIXME:
             print("purlvin : ", meta.debug, Meta.debug) #FIXME:
             send_email(meta)
 
