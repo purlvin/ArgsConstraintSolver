@@ -34,7 +34,7 @@ def get_test_spec(yml, outdir):
                     orig = None
                 constraints["class"][class_name] = {"orig": orig, "vars": {}, "constrs": []}
             # Class - variables
-            m = re.match(r'\s*rand\s*(\w+)\s*(.+)\s*;.*', line)
+            m = re.match(r'\s*rand\s+(\w+)\s*(.+)\s*;.*', line)
             if (m):
                 n    = 1
                 k, v = m.groups()
@@ -196,8 +196,8 @@ def gen_solver_sv(sv, spec, debug):
     f.write('    int fd_genargs, fd_plusargs, ret;\n')
     f.write('    string args, val, cmd;\n\n')
     f.write('    cmd         = "";\n')
-    f.write('    fd_genargs  = $fopen("genargs_rnd.cfg", "w");\n')
-    f.write('    fd_plusargs = $fopen("plusargs_rnd.cfg", "w");\n')
+    f.write('    fd_genargs  = $fopen("genargs.cfg", "w");\n')
+    f.write('    fd_plusargs = $fopen("plusargs.cfg", "w");\n')
     for c in spec["constraints"]["class"]:
         f.write('\n    // -> Class {0}\n'.format(c))
         f.write('    if (_{0}_enable) begin\n'.format(c))

@@ -12,6 +12,7 @@ class constraints_suite_conv extends constraints_global;
   rand e_int_local  abc;
   typedef bit       e_switch;            
   rand e_switch     cde;
+  rand e_switch     rand_op;
   typedef integer   e_int_coordinate;
   rand e_int_coordinate coor[4];
   
@@ -24,6 +25,7 @@ class constraints_suite_conv extends constraints_global;
   // Test suite default constraints
   constraint suite_conv_default {
     filters   inside {`INTEGER__DIS,  8, 16, 32};
+    rand_op     == 1;
   }
 
   // Test specific constraints
