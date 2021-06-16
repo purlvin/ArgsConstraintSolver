@@ -4,6 +4,7 @@ import subprocess
 import random
 import time
 from datetime import datetime
+from pprint import pprint
 
 # -------------------------------
 # Email
@@ -19,7 +20,7 @@ def construct_email_context(meta):
     email_body_header = "<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n"
     #Body
     email_body = '''\
-<span style='font-size: 22px'><b> DV_CHECK_SUBMIT REPORT </b> - <span style = 'color:{_color}';>{_status}({_stage})</span></span><hr>
+<span style='font-size: 22px'><b> TENSIX_RUN_TEST REPORT </b> - <span style = 'color:{_color}';>{_status}({_stage})</span></span><hr>
 <table style='border:0px;font-size:12px'>
   <tr class='row'><td class='key'>Sanity Run ID :</td><td class='value'>{_id}</td></tr>
   <tr class='row'><td class='key'>Workspace :</td><td class='value'>({_host}) {_root}</td></tr>
@@ -51,18 +52,20 @@ def construct_email_context(meta):
 '''.format(_stage_list=rows[0], _status_list=rows[1])
     #   -> Primary test status
     rows = ""
+    pprint(meta.test_stages) #FIXME:
     for test,hash in meta.test_stages.items():
         stage = hash["stages"][0]
         rows += "<tr><td style='color: {_color};'>{_status}</td>".format(_color="red" if (stage["status"]=="FAIL") else "green" if (stage["status"]=="PASS") else "gray", _status=stage["status"] if  (stage["status"]=="PASS") else "{} ({})".format(stage["status"],hash["current"]))
         rows += "<td>{_suite}</td>".format(_suite=stage["suite"])
         rows += "<td>{_test}</td>".format(_test=test)
+        rows += "<td>{_seed}</td>".format(_seed=hash["seed"])
         rows += "<td>{_duration}</td>".format(_duration=stage["duration"])
         #rows += "<td><a  style='text-decoration:none;' href='{_ref}'>Log</a></td>".format(_ref=stage["log"])
         rows += "<td>{_log}</td>".format(_log=stage["log"])
         rows += "</tr>\n"
     email_body += '''\
 <b>PRIMARY TESTS STATUS</b>
-<table><tr><th>STATUS</th><th>SUITE</th><th>TESTNAME</th><th>DURATION</th><th>LOG</th></tr>
+<table><tr><th>STATUS</th><th>SUITE</th><th>TESTNAME</th><th>SEED</th><th>DURATION</th><th>LOG</th></tr>
 {_rows}</table>
 '''.format(_rows=rows)
     #End tags
@@ -75,7 +78,7 @@ def send_email(meta):
     user         = os.environ.get('USER')
     subject,body = construct_email_context(meta)
     body = '''\
-To: {_user}@mkdcmail.amd.com
+To: {_user}@tenstorrent.com, mchit@tenstorrent.com
 Subject: {_subject}
 Content-Type: text/html
 

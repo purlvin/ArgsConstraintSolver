@@ -227,7 +227,7 @@ run_id_to_timestamp_of_first_exit_signature = { }
 run_id_to_args = { }  # for storing GENARGS, SIMARGS, PLUSARGS
 
 # Match run id from the filename
-runid_matcher = re.compile ("run_(\d*).log$")
+runid_matcher = re.compile ("vcs_run.log$")
 
 # Match tags in form of <mytag>
 tag_matcher = re.compile('[<]([^>]*)[>]')

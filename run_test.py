@@ -29,10 +29,12 @@ log         = os.path.join(outdir,  "run_test.log")
 
 
 # -------------------------------
+global meta
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
-    
+   
+    debug  = 11
     proc        = []
     start_time  = time.time()
     stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
@@ -42,7 +44,7 @@ class Meta:
         self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,spec in sorted(test_spec.items()): 
-            self.test_stages[test]            = {"current": "N/A", "stages": [{"stage": "OVERALL", "status": "FAIL", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test_run.log")}]} 
+            self.test_stages[test]            = {"seed": "N/A", "current": "N/A", "stages": [{"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")}]} 
             self.test_stages[test]["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.TEST_STG]
     def id(self):
         return self.id
@@ -64,9 +66,9 @@ class Meta:
         i = [self.stages["stages"].index(stage) for stage in self.stages["stages"] if stage['stage'] == self.stages["current"]][0]
         self.stages["stages"][i]["status"]   = status
         self.stages["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
-        if (status == "FAIL"): 
-            self.stages["stages"][0]["status"]   = status
-            self.stages["stages"][0]["duration"] = self.stages["stages"][i]["duration"]
+        if (status == "FAIL"): self.stages["stages"][0]["status"]   = status
+        self.stages["stages"][0]["duration"] = self.stages["stages"][i]["duration"]
+        print("DEBU(update_status)", self.stages["current"], status)
         return i
     def stage_status(self, stage):
         status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
@@ -80,9 +82,12 @@ class Meta:
         i = [self.test_stages[test]["stages"].index(stage) for stage in self.test_stages[test]["stages"] if stage['stage'] == self.test_stages[test]["current"]][0]
         self.test_stages[test]["stages"][i]["status"]   = status
         self.test_stages[test]["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
-        if (status == "FAIL"): 
-            self.test_stages[test]["stages"][0]["status"] = status
-            self.test_stages[test]["stages"][0]["status"] = self.test_stages[test]["stages"][i]["duration"]
+        if (status == "FAIL"): self.test_stages[test]["stages"][0]["status"] = status
+        self.test_stages[test]["stages"][0]["duration"] = self.test_stages[test]["stages"][i]["duration"]
+        print("DEBU(update_test_status)", test, self.test_stages[test]["current"], status, self.test_stages[test]["stages"][0]["duration"])
+        self.debug = 22
+        Meta.debug = 33 
+        
         return i
     def test_stage_status(self, test, stage):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
@@ -166,6 +171,7 @@ def env_cleanup():
 
 # -------------------------------
 def prebuild(test_spec):
+    global meta
     log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
     meta.start_stage(meta.STG.PREBUILD.name, log)
     cmd = '''\
@@ -199,6 +205,7 @@ echo -e "-- STAGE build_test_generator --"
 
 # -------------------------------
 def vsc_compile():
+    global meta
     for dir in [simdir, simdir_stg1]:
       os.makedirs(dir, exist_ok=True)
     # Stage 1 VCS compile
@@ -227,31 +234,33 @@ def vsc_compile():
 
 # -------------------------------
 def testRunInParallel(id, test, seed, spec, args):
-    (base, ttx, j_sim_run) = (spec["base"], spec["ttx"], args["j_sim_run"])
+    global meta
+    (base, ttx) = (spec["base"], spec["ttx"])
     cfg_args = {}
     cfg_hash = {}
     test_rundir = os.path.join(rundir, test)
     os.makedirs(test_rundir, exist_ok=True)
-    run_log_file = open(os.path.join(rundir, test, "test_run.log"), "w")   
+    test_log = os.path.join(rundir, test, "test.log")
+    f_test_log = open(test_log, "w")   
 
     # Stage 1 VCS run
-    if (not j_sim_run):
-      log = os.path.join(test_rundir, "stg1_vcs_run.log")
-      meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
-      msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
-      logger.info(msg)
-      run_log_file.write(msg+"\n");
-      cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
-      ret  = meta.run_subprocess(cmd)["returncode"]
-      ret |= 1 if ("Error" in open(log).read()) else 0
-      if ret != 0:
-        msg = " [{}]: {} : Stage 1 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
-        logger.error(msg) 
-        meta.update_test_status(test, "FAIL")
-        run_log_file.write(msg+"\n");
-        run_log_file.close()
-        raise Exception("Die run_test.py!")
-      meta.update_test_status(test, "PASS")
+    log = os.path.join(test_rundir, "stg1_vcs_run.log")
+    meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
+    msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
+    logger.info(msg)
+    f_test_log.write(msg+"\n");
+    cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
+    ret  = meta.run_subprocess(cmd)["returncode"]
+    ret |= 1 if ("Error" in open(log).read()) else 0
+    if ret != 0:
+      msg = " [{}]: {} : Stage 1 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
+      logger.error(msg) 
+      meta.update_test_status(test, "FAIL")
+      f_test_log.write(msg+"\n");
+      f_test_log.close()
+      raise Exception("Die run_test.py!")
+    f_test_log.write(cmd+"\n");
+    meta.update_test_status(test, "PASS")
     # Paring .cfg files
     for x in ["genargs", "plusargs"] :
         cfg = os.path.join(test_rundir, x + ".cfg")
@@ -259,8 +268,8 @@ def testRunInParallel(id, test, seed, spec, args):
         cfg_args[x] = f.read().strip().split("\n")
         cfg_hash[x] = {}
         f.close
-    cfg_args["genargs"]  += [ "--{}".format(arg) for arg in args["genargs"]]
-    cfg_args["plusargs"] += [ "+{}".format(arg) for arg in args["plusargs"]]
+    if args["genargs"] : cfg_args["genargs"]  += args["genargs"] 
+    if args["plusargs"] : cfg_args["plusargs"] += args["plusargs"]
     for k,v in cfg_args.items():
         k = k.split(".")[0]
         for x in v:
@@ -280,62 +289,79 @@ def testRunInParallel(id, test, seed, spec, args):
     meta.start_test_stage(test, meta.TEST_STG.TTX_GEN.name, log)
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
-    run_log_file.write(msg+"\n");
+    f_test_log.write(msg+"\n");
     cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
     ret  = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : TTX generation failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
+      f_test_log.write(msg+"\n");
       meta.update_test_status(test, "FAIL")
-      run_log_file.write(msg+"\n");
-      run_log_file.close()
+      f_test_log.close()
       raise Exception("Die run_test.py!")
+    f_test_log.write(cmd+"\n");
     meta.update_test_status(test, "PASS")
     # CKTI
     log = os.path.join(test_rundir, "ckti.log")
     meta.start_test_stage(test, meta.TEST_STG.CKTI.name, log)
     msg = '   --> [{}: {}] CKTI'.format(id, test)
     logger.info(msg)
-    run_log_file.write(msg+"\n");
+    f_test_log.write(msg+"\n");
     cmd = "  cd {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2} &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
     ret  = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : CKTI failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
+      f_test_log.write(msg+"\n");
       meta.update_test_status(test, "FAIL")
-      run_log_file.write(msg+"\n");
-      run_log_file.close()
+      f_test_log.close()
       raise Exception("Die run_test.py!")
+    f_test_log.write(cmd+"\n");
     meta.update_test_status(test, "PASS")
     # Stage 2 VCS run
     log = os.path.join(test_rundir, "vcs_run.log")
+    f = open(log, "w")
+    info = '''\
+<BUILDARGS> TEST={_ttx} SIM=vcs TENSIX_GRID_SIZE=1x1
+<GENARGS> {_genargs} 
+<SIMARGS>
+<PLUSARGS> {_plusargs}
+<TAG> {_id} 
+<RERUN-COMMAND> {_cmd}
+'''.format(_ttx=ttx, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
+    f.writelines(info + "\n");
+    f.close
+    #  -> run vcs
     meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
-    run_log_file.write(msg+"\n");
+    f_test_log.write(msg+"\n");
     vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none +ntb_random_seed={3} +test={2} {5} &> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
     ret  = meta.run_subprocess(cmd)["returncode"]
     ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
     if ret != 0:
       msg = " [{}]: {} : Stage 2 VCS run failed! \n  CMD: {}".format(id, test, cmd) 
       logger.error(msg) 
+      f_test_log.write(msg+"\n");
       meta.update_test_status(test, "FAIL")
-      run_log_file.write(msg+"\n");
-      run_log_file.close()
+      pprint(meta.test_stages) #FIXME:
+      f_test_log.close()
       raise Exception("Die run_test.py!")
+    f_test_log.write(cmd+"\n");
     meta.update_test_status(test, "PASS")
-    run_log_file.write("<TEST-PASSED>");
-    run_log_file.close()
+    f_test_log.write("\n<TEST-PASSED>");
+    f_test_log.close()
 def vsc_run(test_spec, args):
+    global meta
     id = 0
+    meta.start_stage(meta.STG.SIM_RUN.name, "")
     for test,spec in sorted(test_spec.items()):
         log = os.path.join(rundir, test, "test_run.log")
-        meta.start_stage(meta.STG.SIM_RUN.name, log)
-        meta.update_status("FAIL")
         if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
         if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
+        #meta.test_stages[test]["seed"] = seed
         p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
         p.start()
         meta.proc.append(p)
@@ -345,20 +371,21 @@ def vsc_run(test_spec, args):
 
 # -------------------------------
 def result_report(test_spec):
-    results = {}
+    global meta
     id = 0
     stage_status = "PASS"
     for test in sorted(test_spec.keys()):
-        results[test] = Colors.RED + "FAIL" + Colors.END
+        test_status = Colors.RED + "FAIL" + Colors.END
         run_log = os.path.join(rundir, test, "test_run.log")
         if ("<TEST-PASSED>" in open(run_log).read()): 
-            results[test] =  Colors.GREEN + "PASS" + Colors.END
-            logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "")) 
+            test_status =  Colors.GREEN + "PASS" + Colors.END
+            logger.debug("  {0:-3} - {1:30} (seed={4}) : {2} {3}".format(id, test, test_status, "", meta.test_stages[test]["seed"])) 
         else:
-            logger.debug("  {0:-3} - {1:30}: {2} {3}".format(id, test, results[test], "(run_log: {0})".format(run_log)))
-            #meta.update_test_status(test, "FAIL")
+            logger.debug("  {0:-3} - {1:30} (seed={4}) : {2} {3}".format(id, test, test_status, "(run_log: {0})".format(run_log), meta.test_stages[test]["seed"]))
             stage_status = "FAIL"
         id += 1
+    meta.update_status(stage_status)
+    meta.start_stage("OVERALL", log)
     meta.update_status(stage_status)
 
 # -------------------------------
@@ -378,8 +405,8 @@ def main():
     ap.add_argument("test", nargs='?',       help="Test name")
     ap.add_argument("-w",   "--when",        help="When groups nane")
     ap.add_argument("-s",   "--seed",        help="Seed")
-    ap.add_argument('-ga',  "--genargs",     type=str, nargs='*', default=[], help="TTX args example: -a <ARG1>=<VALUE> <ARG2>=<VALUE>")
-    ap.add_argument('-pa',  "--plusargs",    type=str, nargs='*', default=[], help="Sim run args example: -a <ARG1>=<VALUE> <ARG2>=<VALUE>")
+    ap.add_argument('-ga',  "--genargs",     help="TTX args example: -ga '<ARG1>=<VALUE> <ARG2>=<VALUE>'")
+    ap.add_argument('-pa',  "--plusargs",    help="Sim run args example: -pa '<ARG1>=<VALUE> <ARG2>=<VALUE>'")
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
@@ -388,6 +415,8 @@ def main():
     global args
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "quick"
+    if (args["genargs"]): args["genargs"] = args["genargs"].split(" ") 
+    if (args["plusargs"]): args["plusargs"] = args["plusargs"].split(" ") 
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
@@ -440,5 +469,7 @@ if __name__ == "__main__":
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
+            pprint(meta.test_stages) #FIXME:
+            print("purlvin : ", meta.debug, Meta.debug) #FIXME:
             send_email(meta)
 
