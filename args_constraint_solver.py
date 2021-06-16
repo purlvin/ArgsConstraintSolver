@@ -34,7 +34,7 @@ def get_test_spec(yml, outdir):
                     orig = None
                 constraints["class"][class_name] = {"orig": orig, "vars": {}, "constrs": []}
             # Class - variables
-            m = re.match(r'\s*rand\s*(\w+)\s*(.+)\s*;.*', line)
+            m = re.match(r'\s*rand\s+(\w+)\s*(.+)\s*;.*', line)
             if (m):
                 n    = 1
                 k, v = m.groups()
