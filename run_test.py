@@ -33,8 +33,6 @@ global meta
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
-   
-    debug  = 11
 
     proc        = []
     start_time  = time.time()
@@ -69,7 +67,6 @@ class Meta:
         self.stages["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
         if (status == "FAIL"): self.stages["stages"][0]["status"]   = status
         self.stages["stages"][0]["duration"] = self.stages["stages"][i]["duration"]
-        print("DEBU(update_status)", self.stages["current"], status)
         return i
     def stage_status(self, stage):
         status = [s["status"] for s in self.stages["stages"] if s["stage"] == stage][0]
@@ -85,23 +82,11 @@ class Meta:
         self.test_stages[test]["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
         if (status == "FAIL"): self.test_stages[test]["stages"][0]["status"] = status
         self.test_stages[test]["stages"][0]["duration"] = self.test_stages[test]["stages"][i]["duration"]
-        print("DEBUG(update_test_status)", test, self.test_stages[test]["current"], status, self.test_stages[test]["stages"][0]["duration"])
-        
-        self.debug = 22
-        Meta.debug = 33 
-        pprint(meta.test_stages) #FIXME:
-        
         return i
     def test_stage_status(self, test, stage):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
         status = [s["status"] for s in self.test_stages[test]["stages"] if s['stage'] == stage][0]
         return status
-    def get_test_stages(self):
-        self.debug = 22
-        Meta.debug = 33
-        print("[Meta]: ", self.debug, Meta.debug)
-        pprint(meta.test_stages) #FIXME:
-        return meta.test_stages
 
 
 class Colors:
@@ -368,12 +353,10 @@ def vsc_run(test_spec, args):
     meta.start_stage(meta.STG.SIM_RUN.name, "")
     for test,spec in sorted(test_spec.items()):
         log = os.path.join(rundir, test, "test.log")
-        #FIXME: meta.start_stage(meta.STG.SIM_RUN.name, log)
-        #FIXME: meta.update_status("FAIL")
         if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
         if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
-        #meta.test_stages[test]["seed"] = seed
+        meta.test_stages[test]["seed"] = seed
         p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
         p.start()
         meta.proc.append(p)
@@ -481,12 +464,6 @@ if __name__ == "__main__":
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
-            pprint(meta.test_stages) #FIXME:
-            pprint(meta.stages) #FIXME:
-            print("purlvin : ", meta.debug, Meta.debug) #FIXME:
-            
-            test_stage = meta.get_test_stages()
-            pprint(meta.test_stages) #FIXME:
-
             send_email(meta)
+
 
