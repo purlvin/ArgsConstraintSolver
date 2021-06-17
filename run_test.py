@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import glob, shutil, os, sys 
-from multiprocessing import Process
+from multiprocessing import Process,Manager
 import subprocess
 import yaml
 import re
@@ -29,7 +29,8 @@ log         = os.path.join(outdir,  "run_test.log")
 
 
 # -------------------------------
-global meta
+global meta, manager 
+manager     = Manager()
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
@@ -37,14 +38,14 @@ class Meta:
     proc        = []
     start_time  = time.time()
     stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
-    test_stages = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
+    test_stages = manager.dict() # {test: {current: "", stages: [{stage: "", status: ""}]}}
     def __init__(self, test_spec):
         self.id = random.getrandbits(32)
         self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,spec in sorted(test_spec.items()): 
-            self.test_stages[test]            = {"seed": "N/A", "current": "N/A", "stages": [{"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")}]} 
-            self.test_stages[test]["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.TEST_STG]
+            self.test_stages[test]            = manager.dict({"seed": "N/A", "current": "N/A", "stages": manager.list([manager.dict({"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")})])}) 
+            self.test_stages[test]["stages"] += manager.list([manager.dict({"stage": stage.name, "status": "N/A", "duration": "N/A"}) for stage in self.TEST_STG])
     def id(self):
         return self.id
     def cmdline(self):
@@ -77,7 +78,8 @@ class Meta:
         self.test_stages[test]["stages"][i]["log"] = log
     def update_test_status(self, test, status):
         if (test not in self.test_stages): raise ValueError("FAIL to find {_test} in meta({_list})".format(_test=test, _list=self.test_stages.keys()))
-        i = [self.test_stages[test]["stages"].index(stage) for stage in self.test_stages[test]["stages"] if stage['stage'] == self.test_stages[test]["current"]][0]
+        test_stages = dict(self.test_stages[test])
+        i = [ stage["stage"] for stage in test_stages["stages"] ].index(test_stages["current"])
         self.test_stages[test]["stages"][i]["status"]   = status
         self.test_stages[test]["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
         if (status == "FAIL"): self.test_stages[test]["stages"][0]["status"] = status
@@ -464,6 +466,6 @@ if __name__ == "__main__":
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
+            #[ print(stage) for stage in meta.test_stages["conv_basic"]["stages"] ]
             send_email(meta)
-
 
