@@ -12,6 +12,7 @@ import subprocess
 import datetime
 from pymongo import MongoClient
 from statistics import mean
+from pathlib import Path
 
 ROOT = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip('\n')
 sys.path.append(os.path.join(ROOT, 'infra'))
@@ -226,9 +227,6 @@ run_id_to_run_signature = { }
 run_id_to_timestamp_of_first_exit_signature = { }
 run_id_to_args = { }  # for storing GENARGS, SIMARGS, PLUSARGS
 
-# Match run id from the filename
-runid_matcher = re.compile ("vcs_run.log$")
-
 # Match tags in form of <mytag>
 tag_matcher = re.compile('[<]([^>]*)[>]')
 if args.tag_ovrd is not None:
@@ -320,19 +318,11 @@ previous_lines  = collections.deque(maxlen=2)
 
 time_me(starting="Log parsing")
 
-for filename in os.listdir(args.indir):
-    if not os.path.isfile(args.indir + "/" + filename):
-        continue
-
-    filepath = args.indir + "/" + filename
-    with open(filepath) as f:
-        m = runid_matcher.search (filepath)
-        if m:
-            run_id = int(m.group (1))
-            set_of_all_run_ids.add (run_id)
-        else:
-            print ("Not a run file " + filepath)
-            continue
+run_id = -1 
+for filename in [str(p) for p in Path(args.indir).rglob("vcs_run.log")]:
+    with open(filename) as f:
+        run_id += 1
+        set_of_all_run_ids.add(run_id)
 
         #print ("filename = "+ filename + " run_id = " + str(run_id))
         line_num = 0

@@ -52,7 +52,6 @@ def construct_email_context(meta):
 '''.format(_stage_list=rows[0], _status_list=rows[1])
     #   -> Primary test status
     rows = ""
-    pprint(meta.test_stages) #FIXME:
     for test,hash in meta.test_stages.items():
         stage = hash["stages"][0]
         rows += "<tr><td style='color: {_color};'>{_status}</td>".format(_color="red" if (stage["status"]=="FAIL") else "green" if (stage["status"]=="PASS") else "gray", _status=stage["status"] if  (stage["status"]=="PASS") else "{} ({})".format(stage["status"],hash["current"]))

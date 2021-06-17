@@ -12,6 +12,7 @@ from enum import Enum
 from pprint import pprint
 from datetime import datetime
 from lib_email  import send_email
+#import lib_db
 
 # -------------------------------
 # Path variables
@@ -152,6 +153,7 @@ def get_test_spec(yml, tgt_test, tgt_group):
             test_spec[test] = info
             if ("_clones" in test_hash): 
                 for i in range(test_hash["_clones"]): test_spec["{}__{}".format(test,i+1)] = info
+    if (not test_spec): raise ValueError("FAIL to find {_type} '{_name}'!".format(_type="test" if tgt_test else "suite", _name=tgt_test if tgt_test else tgt_group))
     return test_spec
 
 # -------------------------------
@@ -242,7 +244,7 @@ def testRunInParallel(id, test, seed, spec, args):
     # Stage 1 VCS run
     log = os.path.join(test_rundir, "stg1_vcs_run.log")
     meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
-    msg = '   --> [{}: {}] Stage 1 VCS run(seed: {})'.format(id, test, seed)
+    msg = '   --> [{}: {}] Stage 1 VCS run'.format(id, test)
     logger.info(msg)
     f_test_log.write(msg+"\n");
     cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
@@ -367,7 +369,7 @@ def vsc_run(test_spec, args):
       if isinstance(p, Process): p.join()
 
 # -------------------------------
-def result_report(test_spec):
+def result_report(test_spec, args):
     global meta
     id = 0
     stage_status = "PASS"
@@ -384,6 +386,17 @@ def result_report(test_spec):
     meta.update_status(stage_status)
     meta.start_stage("OVERALL", log)
     meta.update_status(stage_status)
+    # Upload to mongo db
+    if (not args["nodb"]):
+        msg = ' --> Upload result to database'.format()
+        logger.info(msg)
+        cmd = "  python3 lib_db.py --indir {0} --nodb --testname --test_pass_pct 97 --rm_passing_ttx --rm_passing_log --limit_ttx_run_size 300 --rm_passing_gen &>> {1} ".format(rundir, log)
+        logger.debug(cmd)
+        ret = meta.run_subprocess(cmd)["returncode"]
+        if ret != 0: 
+          logger.error("Upload to database failed! \n  CMD: {0}".format(cmd)) 
+          raise Exception("Die run_test.py!")
+
 
 # -------------------------------
 def main():
@@ -407,6 +420,7 @@ def main():
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
+    ap.add_argument("-ndb", "--nodb",        action="store_true", help="Not upload result to database")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
     ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
     global args
@@ -450,7 +464,7 @@ def main():
 
     # STEP 4: Result report
     logger.info(' STEP 4: Result report')
-    result_report(test_spec)
+    result_report(test_spec, args)
 
 
 if __name__ == "__main__":
