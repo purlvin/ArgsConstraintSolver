@@ -329,16 +329,17 @@ def testRunInParallel(id, test, seed, spec, args):
 <TAG> {_id} 
 <RERUN-COMMAND> N/A
 '''.format(_ttx=ttx, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
-    f.writelines(info + "\n");
+    f.writelines(info + "\n")
     f.close
     #  -> run vcs
     meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
-    f_test_log.write(msg+"\n");
+    f_test_log.write(msg+"\n")
     vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
-    f_test_log.write(cmd+"\n");
+    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+    f_test_log.write(cmd+"\n")
+    sys.stdout.flush()
     ret  = meta.run_subprocess(cmd)["returncode"]
     ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
     if ret != 0:
@@ -387,7 +388,7 @@ def result_report(test_spec, args):
     meta.start_stage("OVERALL", log)
     meta.update_status(stage_status)
     # Upload to mongo db
-    if (not args["nodb"]):
+    if (args["nodb"]):
         msg = ' --> Upload result to database'.format()
         logger.info(msg)
         cmd = "  python3 lib_db.py --indir {0} --nodb --testname --test_pass_pct 97 --rm_passing_ttx --rm_passing_log --limit_ttx_run_size 300 --rm_passing_gen &>> {1} ".format(rundir, log)
