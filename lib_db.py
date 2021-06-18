@@ -49,13 +49,33 @@ class bcolors:
 
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 
-#FIXME: from test_lib_utils import get_safe_env
-
-def get_safe_env(x):
-    env = {
-        'SHELL': os.environ.get('SHELL'),
-        'USER': os.environ.get('USER'),
+def get_safe_env():
+    safe_vars = {
+        "CI_PROJECT_PATH",            # :       "tensix",
+        "CI_PIPELINE_SOURCE",         # :  "CI_Trigger",
+        "CI_JOB_STAGE",               # :       "post-commit",
+        "GITLAB_USER_LOGIN",          # :       "ihamer",
+        "CI_BUILD_STAGE",             # :       "post-commit",
+        "CI_PIPELINE_ID",             # :       "5556",
+        "USER",                       # :  "Runner",
+        "CI_COMMIT_SHA",              # :  "Commit",
+        "CI_COMMIT_AUTHOR",           # :  "Commit Author"
+        "SHELL",                      # :       "/bin/bash",
+        "CI_COMMIT_REF_NAME",         # :  "CI Branch",
+        "CI_JOB_ID",                  # :       "14225",
+        "CI_BUILD_ID",                # :       "14225",
+        "CI_PROJECT_PATH_SLUG",       # :       "tensix",
+        "CI_JOB_NAME",                # :  "CI Job Name",
+        "CI_RUNNER_DESCRIPTION",      # :       "kozmo",
+        "CI_BUILD_NAME",              # :       "post-commit",
+        # The ones below are added by us (ie. they are not part of OS environment or Gitlabs vars)
+        "CI_ZVERSIM_JOB_DESCRIPTION", # : "Description"
+        "CI_ZVERSIM_SCRIPT"
     }
+    env = { }
+    for var in os.environ:
+        if var in safe_vars:
+            env[var] = os.environ[var]
     return env
 
 parser = argparse.ArgumentParser(description='Test output parser 0.1. This program parses output of tests and reports the stats.')

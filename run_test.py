@@ -222,7 +222,7 @@ def vsc_compile():
     log = "{_simdir}/vcs_compile.log".format(_simdir=simdir) 
     meta.start_stage(meta.STG.SIM_BUILD_2.name, log)
     logger.info('   --> Stage 2 VCS compile')
-    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+SIM=vcs -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
     ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
@@ -322,13 +322,13 @@ def testRunInParallel(id, test, seed, spec, args):
     log = os.path.join(test_rundir, "vcs_run.log")
     f = open(log, "w")
     info = '''\
-<BUILDARGS> TEST={_ttx} SIM=vcs TENSIX_GRID_SIZE=1x1
+<BUILDARGS> TEST={_test} SIM=vcs TENSIX_GRID_SIZE=1x1
 <GENARGS> {_genargs} 
 <SIMARGS>
 <PLUSARGS> {_plusargs}
 <TAG> {_id} 
 <RERUN-COMMAND> N/A
-'''.format(_ttx=ttx, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
+'''.format(_test=test, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
     f.writelines(info + "\n")
     f.close
     #  -> run vcs
@@ -358,8 +358,8 @@ def vsc_run(test_spec, args):
     meta.start_stage(meta.STG.SIM_RUN.name, "")
     for test,spec in sorted(test_spec.items()):
         log = os.path.join(rundir, test, "test.log")
-        if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
-        if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
+        if (args["dump"]):  spec["args"] += ["--vcdfile=waveform.vcd"]
+        if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
         p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
@@ -388,11 +388,11 @@ def result_report(test_spec, args):
     meta.start_stage("OVERALL", log)
     meta.update_status(stage_status)
     # Upload to mongo db
-    if (args["nodb"]):
+    if (args["upload_db"]):
         msg = ' --> Upload result to database'.format()
         logger.info(msg)
-        cmd = "  python3 lib_db.py --indir {0} --nodb --testname --test_pass_pct 97 --rm_passing_ttx --rm_passing_log --limit_ttx_run_size 300 --rm_passing_gen &>> {1} ".format(rundir, log)
-        logger.debug(cmd)
+        # ENV: CI_JOB_NAME, CI_COMMIT_AUTHOR
+        cmd = "  python3 {0}/lib_db.py --indir {1} --testname --limit_ttx_run_size 300 ".format(metadir, rundir)
         ret = meta.run_subprocess(cmd)["returncode"]
         if ret != 0: 
           logger.error("Upload to database failed! \n  CMD: {0}".format(cmd)) 
@@ -421,7 +421,7 @@ def main():
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
-    ap.add_argument("-ndb", "--nodb",        action="store_true", help="Not upload result to database")
+    ap.add_argument("-udb", "--upload_db",   action="store_true", help="Upload result to database")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
     ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
     global args
@@ -433,6 +433,7 @@ def main():
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
     if args["j_sim_run"] : args["j_sim_build"] = True
+    if (args["upload_db"]) and os.path.exists(rundir): shutil.rmtree(rundir); os.makedirs(rundir, exist_ok=True)
 
     # STEP 0: Env cleanup
     if (not args["j_sim_build"]):
