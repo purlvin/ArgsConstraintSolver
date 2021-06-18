@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import glob, shutil, os, sys 
-from multiprocessing import Process,Manager
+import multiprocessing
+from multiprocessing import Process, Manager, Semaphore
 import subprocess
 import yaml
 import re
@@ -36,7 +37,8 @@ class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
 
-    proc        = []
+    sem         = Semaphore(2)
+    proc        = manager.dict()
     start_time  = time.time()
     stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
     test_stages = manager.dict() # {test: {current: "", stages: [{stage: "", status: ""}]}}
@@ -52,10 +54,12 @@ class Meta:
     def cmdline(self):
         cmdline = sys.argv
         return " ".join(cmdline)
-    def run_subprocess(self, cmd):
+    def register_process(self, proc, name):
+        self.proc[proc] = name
+    def subprocess_exec(self, cmd):
         ret = {}
         p = subprocess.Popen(cmd, shell=True)
-        self.proc.append(p)
+        self.register_process(p, "subprocess")
         ret["stdout"], ret["stderr"] = p.communicate()
         ret["returncode"] = p.returncode
         return ret
@@ -144,7 +148,6 @@ def get_test_spec(yml, tgt_test, tgt_group):
         info = {
             "base":     test,
             "suite":    test_hash["_suite"],
-            "fw":       test_hash["_fw"],
             "ttx":      test_hash["_ttx"],
             "args":     flatten_list(test_hash["_args"]),
         }
@@ -167,6 +170,11 @@ def env_cleanup():
     if os.path.exists(outdir): shutil.rmtree(outdir)
     outdir = "{0}/tvm_tb/out".format(tbdir)
     if os.path.exists(outdir): shutil.rmtree(outdir)
+def TimeoutDaemon(logger, timeout):
+    logger.info(" ->> Timeout Daemon activated({} sec)".format(timeout))
+    time.sleep(timeout)
+    logger.error("  --> Timeout exit triggered!")
+    raise KeyboardInterrupt
 
 # -------------------------------
 def prebuild(test_spec):
@@ -184,7 +192,7 @@ cd $ROOT/src/test_ckernels/gen && make -j 64
 cd $ROOT/src/test_ckernels/src && make -j 64
 cd $ROOT/src/t6ifc/vcs-core/tvm_tb && make SIM=vcs -j 64
 echo -e "-- STAGE build_firmware --"
-cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/main
+cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
     for ttx in list(set([spec["ttx"] for test,spec in test_spec.items()])):
@@ -195,7 +203,7 @@ echo -e "-- STAGE build_test_generator --"
     f.close()
     logger.debug('  -> Building testbench : {0}'.format(sh))
     cmd = "  source {0} &> {1} ".format(sh, log)
-    ret = meta.run_subprocess(cmd)["returncode"]
+    ret = meta.subprocess_exec(cmd)["returncode"]
     if ret != 0: 
       logger.error("Prebuild failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -213,7 +221,7 @@ def vsc_compile():
     logger.info('   --> Stage 1 VCS compile')
     sv = os.path.join(pubdir, "constraints_solver.sv")
     cmd = "  cd {0}; {1}/vcs-docker -fsdb -kdb -lca +vcs+lic+wait +incdir+{2} {3} -sverilog -full64 -o {0}/simv &> {4}".format(simdir_stg1, tbdir, pubdir, sv, log)
-    ret = meta.run_subprocess(cmd)["returncode"]
+    ret = meta.subprocess_exec(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 1 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -223,8 +231,8 @@ def vsc_compile():
     log = "{_simdir}/vcs_compile.log".format(_simdir=simdir) 
     meta.start_stage(meta.STG.SIM_BUILD_2.name, log)
     logger.info('   --> Stage 2 VCS compile')
-    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+SIM=vcs -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
-    ret = meta.run_subprocess(cmd)["returncode"]
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+NOVEL_ARGS_CONSTRAINT_TB -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
+    ret = meta.subprocess_exec(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
       meta.update_status("FAIL")
@@ -232,8 +240,18 @@ def vsc_compile():
     meta.update_status("PASS")
 
 # -------------------------------
-def testRunInParallel(id, test, seed, spec, args):
-    global meta
+def testInParallelCleanup(id, test, f_test_log, meta):
+    msg = " [{}]: {} : Stage 1 VCS run failed! \n".format(id, test) 
+    logger.error(msg) 
+    meta.update_test_status(test, "FAIL")
+    f_test_log.write(msg+"\n");
+    f_test_log.close()
+    msg = '   --> [{}: {}] {}: Semaphore release..'.format(id, test, multiprocessing.current_process().name)
+    logger.error(msg) 
+    f_test_log.write(msg+"\n");
+    meta.sem.release()
+
+def testInParallelRun(id, test, seed, spec, args, meta):
     (base, ttx) = (spec["base"], spec["ttx"])
     cfg_args = {}
     cfg_hash = {}
@@ -242,6 +260,12 @@ def testRunInParallel(id, test, seed, spec, args):
     test_log = os.path.join(rundir, test, "test.log")
     f_test_log = open(test_log, "w")   
 
+    msg = '   --> [{}: {}] {}: Semaphore acquiring..'.format(id, test, multiprocessing.current_process().name)
+    logger.info(msg)
+    f_test_log.write(msg+"\n");
+    meta.sem.acquire()
+    
+    time.sleep(20) #FIXME:
     # Stage 1 VCS run
     log = os.path.join(test_rundir, "stg1_vcs_run.log")
     meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
@@ -250,15 +274,11 @@ def testRunInParallel(id, test, seed, spec, args):
     f_test_log.write(msg+"\n");
     cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
     f_test_log.write(cmd+"\n");
-    ret  = meta.run_subprocess(cmd)["returncode"]
+    ret  = meta.subprocess_exec(cmd)["returncode"]
     ret |= 1 if ("Error" in open(log).read()) else 0
     if ret != 0:
-      msg = " [{}]: {} : Stage 1 VCS run failed! \n".format(id, test, cmd) 
-      logger.error(msg) 
-      meta.update_test_status(test, "FAIL")
-      f_test_log.write(msg+"\n");
-      f_test_log.close()
-      raise Exception("Die run_test.py!")
+      testInParallelCleanup(id, test, f_test_log, meta)
+      return
     meta.update_test_status(test, "PASS")
     # Paring .cfg files
     for x in ["genargs", "plusargs"] :
@@ -289,9 +309,9 @@ def testRunInParallel(id, test, seed, spec, args):
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
     f_test_log.write(msg+"\n");
-    cmd = "  cd {0}; ln -sf {1}/fw/{4} fw && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, spec["fw"])
+    cmd = "  cd {0}; ln -sf {1}/fw . && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root)
     f_test_log.write(cmd+"\n");
-    ret  = meta.run_subprocess(cmd)["returncode"]
+    ret  = meta.subprocess_exec(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : TTX generation failed! \n".format(id, test, cmd) 
       logger.error(msg) 
@@ -309,7 +329,7 @@ def testRunInParallel(id, test, seed, spec, args):
     f_test_log.write(msg+"\n");
     cmd = "  cd {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2} &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
     f_test_log.write(cmd+"\n");
-    ret  = meta.run_subprocess(cmd)["returncode"]
+    ret  = meta.subprocess_exec(cmd)["returncode"]
     if ret != 0:
       msg = " [{}]: {} : CKTI failed! \n".format(id, test, cmd) 
       logger.error(msg) 
@@ -323,25 +343,24 @@ def testRunInParallel(id, test, seed, spec, args):
     log = os.path.join(test_rundir, "vcs_run.log")
     f = open(log, "w")
     info = '''\
-<BUILDARGS> TEST={_test} SIM=vcs TENSIX_GRID_SIZE=1x1
+<BUILDARGS> TEST={_ttx} SIM=vcs TENSIX_GRID_SIZE=1x1
 <GENARGS> {_genargs} 
 <SIMARGS>
 <PLUSARGS> {_plusargs}
 <TAG> {_id} 
 <RERUN-COMMAND> N/A
-'''.format(_test=test, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
-    f.writelines(info + "\n")
+'''.format(_ttx=ttx, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
+    f.writelines(info + "\n");
     f.close
     #  -> run vcs
     meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
     msg = '   --> [{}: {}] Stage 2 VCS run'.format(id, test)
     logger.info(msg)
-    f_test_log.write(msg+"\n")
+    f_test_log.write(msg+"\n");
     vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
-    f_test_log.write(cmd+"\n")
-    sys.stdout.flush()
-    ret  = meta.run_subprocess(cmd)["returncode"]
+    cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +tvm_verbo=none +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+    f_test_log.write(cmd+"\n");
+    ret  = meta.subprocess_exec(cmd)["returncode"]
     ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
     if ret != 0:
       msg = " [{}]: {} : Stage 2 VCS run failed! \n".format(id, test, cmd) 
@@ -353,21 +372,29 @@ def testRunInParallel(id, test, seed, spec, args):
     meta.update_test_status(test, "PASS")
     f_test_log.write("\n<TEST-PASSED>");
     f_test_log.close()
+    
+    msg = '   --> [{}: {}] {}: Semaphore release..'.format(id, test, multiprocessing.current_process().name)
+    logger.info(msg)
+    f_test_log.write(msg+"\n");
+    meta.sem.release()
+
 def vsc_run(test_spec, args):
     global meta
     id = 0
     meta.start_stage(meta.STG.SIM_RUN.name, "")
     for test,spec in sorted(test_spec.items()):
         log = os.path.join(rundir, test, "test.log")
-        if (args["dump"]):  spec["args"] += ["--vcdfile=waveform.vcd"]
-        if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
+        if (args["dump"]):  spec["args"] += " --vcdfile=waveform.vcd"
+        if (args["debug"]): spec["args"] += " +event_db=1 +data_reg_mon_enable=1 +tvm_verbo=high"
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
-        p = Process(target=testRunInParallel, name=test, args=(id, test, seed, spec, args))
+        p = Process(target=testInParallelRun, name=test, args=(id, test, seed, spec, args, meta))
         p.start()
-        meta.proc.append(p)
+        meta.register_process(p, "Test-"+test)
         id += 1
+
     for p in meta.proc:
+      print("purlvin - waiting for process", p.name)
       if isinstance(p, Process): p.join()
 
 # -------------------------------
@@ -389,12 +416,12 @@ def result_report(test_spec, args):
     meta.start_stage("OVERALL", log)
     meta.update_status(stage_status)
     # Upload to mongo db
-    if (args["upload_db"]):
+    if (not args["nodb"]):
         msg = ' --> Upload result to database'.format()
         logger.info(msg)
-        # ENV: CI_JOB_NAME, CI_COMMIT_AUTHOR
-        cmd = "  python3 {0}/lib_db.py --indir {1} --testname --limit_ttx_run_size 300 ".format(metadir, rundir)
-        ret = meta.run_subprocess(cmd)["returncode"]
+        cmd = "  python3 lib_db.py --indir {0} --nodb --testname --test_pass_pct 97 --rm_passing_ttx --rm_passing_log --limit_ttx_run_size 300 --rm_passing_gen &>> {1} ".format(rundir, log)
+        logger.debug(cmd)
+        ret = meta.subprocess_exec(cmd)["returncode"]
         if ret != 0: 
           logger.error("Upload to database failed! \n  CMD: {0}".format(cmd)) 
           raise Exception("Die run_test.py!")
@@ -417,12 +444,13 @@ def main():
     ap.add_argument("test", nargs='?',       help="Test name")
     ap.add_argument("-w",   "--when",        help="When groups nane")
     ap.add_argument("-s",   "--seed",        help="Seed")
+    ap.add_argument("-to",   "--timeout",    default=7200, help="Timeout timer in seconds, default: 2 hours(7200s)")
     ap.add_argument('-ga',  "--genargs",     help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
     ap.add_argument('-pa',  "--plusargs",    help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
     ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
     ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
-    ap.add_argument("-udb", "--upload_db",   action="store_true", help="Upload result to database")
+    ap.add_argument("-ndb", "--nodb",        action="store_true", help="Not upload result to database")
     ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
     ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
     global args
@@ -434,7 +462,6 @@ def main():
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
     if args["j_sim_run"] : args["j_sim_build"] = True
-    if (args["upload_db"]) and os.path.exists(rundir): shutil.rmtree(rundir); os.makedirs(rundir, exist_ok=True)
 
     # STEP 0: Env cleanup
     if (not args["j_sim_build"]):
@@ -450,16 +477,20 @@ def main():
     # STEP 0+: Update meta
     global meta
     meta = Meta(test_spec)
+    # STEP 0+: Enable timeout daemon
+    p = Process(target=TimeoutDaemon, name="TimeoutDaemon", args=(logger, int(args["timeout"])))
+    p.start()
+    meta.register_process(p, "TimeoutDaemon")
 
     # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
       logger.info(' STEP 1: Prebuild libraries')
-      prebuild(test_spec)
+      #FIXME: prebuild(test_spec)
     
     # STEP 2: VCS compile
     if (not args["j_sim_run"]):
       logger.info(' STEP 2: VCS compile')
-      vsc_compile()
+      #FIXME: vsc_compile()
    
     # STEP 3: VCS run
     logger.info(' STEP 3: VCS run')
@@ -475,14 +506,13 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         logger.info('\n  Ctrl-c triggered...')
+        os.system("killall -9 simv") #FIXME: 
         for p in meta.proc: 
           logger.info("  Killing process '{}'({})".format(p.name, p.pid))
-          p.kill()
-          os.system("killall -9 simv") #FIXME: 
+          p.terminate()
 
     finally:
         if 'meta' in globals():
-            logger.info(' Sending Email...')
-            #[ print(stage) for stage in meta.test_stages["conv_basic"]["stages"] ]
+            logger.info('  Sending Email...')
             send_email(meta)
 

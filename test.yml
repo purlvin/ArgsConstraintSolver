@@ -7,6 +7,7 @@ templates:
   __math_t : &__math_t
     _constr_grps : &__math_t__constr_grps
       - global_default=1
+    _fw    : main
     _args  : &__math_t__args
       - +math=1
     _when  : &__math_t__when
