@@ -185,6 +185,7 @@ cd $ROOT/src/test_ckernels/src && make -j 64
 cd $ROOT/src/t6ifc/vcs-core/tvm_tb && make SIM=vcs -j 64
 echo -e "-- STAGE build_firmware --"
 cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/main
+cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/single-core-synth-ckernel-mailbox/fw/Makefile TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/single-core-synth-ckernel-mailbox
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
     for ttx in list(set([spec["ttx"] for test,spec in test_spec.items()])):
@@ -193,7 +194,6 @@ echo -e "-- STAGE build_test_generator --"
     f = open(sh, "w")
     f.write(cmd)
     f.close()
-    logger.debug('  -> Building testbench : {0}'.format(sh))
     cmd = "  source {0} &> {1} ".format(sh, log)
     ret = meta.run_subprocess(cmd)["returncode"]
     if ret != 0: 
@@ -289,7 +289,7 @@ def testRunInParallel(id, test, seed, spec, args):
     msg = '   --> [{}: {}] TTX Generation'.format(id, test)
     logger.info(msg)
     f_test_log.write(msg+"\n");
-    cmd = "  cd {0}; ln -sf {1}/fw/{4} fw && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, spec["fw"])
+    cmd = "  cd {0}; ln -sf {1}/fw/{4} fw && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], spec["fw"])
     f_test_log.write(cmd+"\n");
     ret  = meta.run_subprocess(cmd)["returncode"]
     if ret != 0:
@@ -297,7 +297,6 @@ def testRunInParallel(id, test, seed, spec, args):
       logger.error(msg) 
       f_test_log.write(msg+"\n");
       meta.update_test_status(test, "FAIL")
-      f_test_log.write(msg+"\n");
       f_test_log.close()
       raise Exception("Die run_test.py!")
     meta.update_test_status(test, "PASS")
