@@ -131,6 +131,10 @@ tag_descriptors = {
                             'extractor' : lambda re: re.group(1),
                             'tag' : 'TEST',
                             'target' : run_id_to_metrics },
+                           { 're' : re.compile('\\bSUITE=(\\S+)'),
+                             'extractor' : lambda re: re.group(1),
+                             'tag' : 'SUITE',
+                             'target' : run_id_to_metrics },
                            { 're' : re.compile('\\bSIM=(\\S+)'),
                              'extractor' : lambda re: re.group(1),
                              'tag' : 'SIM',
@@ -694,7 +698,7 @@ summary = {
 #
 # METRICS
 #
-metrics_unique_tests = list(set(d['TEST'] for d in run_id_to_metrics.values() if 'TEST' in d))
+metrics_unique_suites = list(set(d['SUITE'] for d in run_id_to_metrics.values() if 'SUITE' in d))
 
 
 def mean_with_key(dicts, key):
@@ -716,7 +720,7 @@ metrics = {
       'pct-fail': (100*len(failed_test_ids))/float(len(set_of_all_run_ids)),
       'pct-crash': (100*len(not_properly_exited_tess))/float(len(set_of_all_run_ids)),
   },
-  'by-test' : {}
+  'by-suite' : {}
 }
 
 def color_pass_pct(pass_pct,thing=None):
@@ -756,12 +760,12 @@ def param_record(test,type,name,val,result):
     results_by_test_by_param_value[test][param_name_value][result] += 1
     return param_name_value
 
-for test in metrics_unique_tests:
-    tests = [d for d in run_id_to_metrics.values() if d.get('TEST','') == test]
+for suite in metrics_unique_suites:
+    tests = [d for d in run_id_to_metrics.values() if d.get('SUITE','') == suite]
     tests_passed = [d for d in tests if d['run_id'] in passed_test_ids]
     tests_failed = [d for d in tests if d['run_id'] in failed_test_ids]
     num_tests_not_properly_exited = len(tests) - (len(tests_passed)+len(tests_failed))
-    metrics['by-test'][test] = { 'avg-cycles-per-second': mean_with_key(tests, 'SIM-CYCLES-PER-SECOND'),
+    metrics['by-suite'][suite] = { 'avg-cycles-per-second': mean_with_key(tests, 'SIM-CYCLES-PER-SECOND'),
                                  'avg-walltime-seconds': mean_with_key(tests, 'SIM-WALLTIME-SECONDS'),
                                  'avg-cycles': mean_with_key(tests, 'SIM-CYCLES'),
                                  'total-passed': len(tests_passed),
@@ -773,7 +777,7 @@ for test in metrics_unique_tests:
                                  'pct-fail': (100*len(tests_failed))/float(len(tests)),
                                  'pct-crash': (100*num_tests_not_properly_exited)/float(len(tests)),
                                  'runs' : {}}
-    mbt = metrics['by-test'][test]
+    mbt = metrics['by-suite'][suite]
     for test in tests:
         run_id = test['run_id']
         res = "crash"
@@ -802,20 +806,19 @@ for test in metrics_unique_tests:
 
 
 print ('')
-print (bcolors.UNDERLINE + 'Summary By Test:' + bcolors.ENDC)
+print (bcolors.UNDERLINE + 'Summary By Suite:' + bcolors.ENDC)
 print ('')
-metrics_unique_tests.sort()
-for test in metrics_unique_tests:
-    # print ('   %s' % test)
+metrics_unique_suites.sort()
+for suite in metrics_unique_suites:
     print (' %s:     Passed: %5d (%s)   Failed: %5d (%6.2f%%)   Total: %5d (%6.2f%%)   Crashed: %5d (%6.2fd%%)  Average CPS: %4d   Average Cycles:   %8d   Average Walltime: %6d (seconds)'
-           % (color_pass_pct(metrics['by-test'][test]['pct-pass'],"%40s"%(test)),
-              metrics['by-test'][test]['total-passed'], color_pass_pct(metrics['by-test'][test]['pct-pass']),
-              metrics['by-test'][test]['total-failed'], metrics['by-test'][test]['pct-fail'],
-              metrics['by-test'][test]['total-tests'], metrics['by-test'][test]['pct-of-total-runs'],
-              metrics['by-test'][test]['total-crash'], metrics['by-test'][test]['pct-crash'],
-              metrics['by-test'][test]['avg-cycles-per-second'],
-              metrics['by-test'][test]['avg-cycles'],
-              metrics['by-test'][test]['avg-walltime-seconds']))
+           % (color_pass_pct(metrics['by-suite'][suite]['pct-pass'],"%20s"%(suite)),
+              metrics['by-suite'][suite]['total-passed'], color_pass_pct(metrics['by-suite'][suite]['pct-pass']),
+              metrics['by-suite'][suite]['total-failed'], metrics['by-suite'][suite]['pct-fail'],
+              metrics['by-suite'][suite]['total-tests'], metrics['by-suite'][suite]['pct-of-total-runs'],
+              metrics['by-suite'][suite]['total-crash'], metrics['by-suite'][suite]['pct-crash'],
+              metrics['by-suite'][suite]['avg-cycles-per-second'],
+              metrics['by-suite'][suite]['avg-cycles'],
+              metrics['by-suite'][suite]['avg-walltime-seconds']))
 print ('')
 print (bcolors.UNDERLINE + 'Summary:' + bcolors.ENDC)
 print ('')
@@ -872,7 +875,7 @@ def flatten_metrics_for_kibana(metrics, safe_env):
     om['system'] = plat_sys
     om['host'] = host
     res = [ om ]
-    for test_name, test_metrics in metrics['by-test'].items():
+    for test_name, test_metrics in metrics['by-suite'].items():
         tm = test_metrics.copy()
         runs = tm.pop('runs') # We'll flatten these below into their own items
         tm['metric-type'] = 'test-overall'

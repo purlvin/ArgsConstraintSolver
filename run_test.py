@@ -243,7 +243,7 @@ def vsc_compile():
 # -------------------------------
 def testRunInParallel(test, seed, meta):
     try: 
-        (id, base, ttx, spec_args)  = (meta.test_spec[test]["id"], meta.test_spec[test]["base"], meta.test_spec[test]["ttx"], meta.test_spec[test]["args"])
+        (id, suite, base, ttx, spec_args)  = (meta.test_spec[test]["id"], meta.test_spec[test]["suite"], meta.test_spec[test]["base"], meta.test_spec[test]["ttx"], meta.test_spec[test]["args"])
         (genargs, plusargs)         = (meta.args["genargs"], meta.args["plusargs"])
         cfg_args = {}
         cfg_hash = {}
@@ -313,13 +313,13 @@ def testRunInParallel(test, seed, meta):
         log = os.path.join(test_rundir, "vcs_run.log")
         f = open(log, "w")
         info = '''\
-<BUILDARGS> TEST={_test} SIM=vcs TENSIX_GRID_SIZE=1x1
+<BUILDARGS> TEST={_test} SUITE={_suite} SIM=vcs TENSIX_GRID_SIZE=1x1
 <GENARGS> {_genargs} 
 <SIMARGS>
 <PLUSARGS> {_plusargs}
 <TAG> {_id} 
 <RERUN-COMMAND> N/A
-'''.format(_test=test, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
+'''.format(_test=test, _suite=suite, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
         f.writelines(info + "\n")
         f.close
         #  -> run vcs
