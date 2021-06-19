@@ -179,7 +179,7 @@ def env_cleanup():
 
 # -------------------------------
 def prebuild(meta):
-    (test_spec) = (meta.test_sepc)
+    (test_spec) = (meta.test_spec)
     log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
     meta.start_stage(meta.STG.PREBUILD.name, log)
     cmd = '''\
