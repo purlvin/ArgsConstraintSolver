@@ -328,7 +328,7 @@ def testRunInParallel(test, seed, meta):
         logger.info(msg)
         f_test_log.write(msg+"\n")
         vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-        cmd  = "  cd {0}; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6}".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+        cmd  = "  cd {0}; trap 'echo kill -9 $PID; kill -9 $PID' SIGINT SIGTERM EXIT; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6} & PID=$!; wait $PID; EXIT_STATUS=$?".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
         f_test_log.write(cmd+"\n")
         sys.stdout.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
