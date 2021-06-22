@@ -3,12 +3,12 @@
 import argparse
 import re
 import os, sys, platform
+import subprocess
 import pymongo
 import collections
 from pprint import pprint
 import operator
 import hashlib
-import subprocess
 import datetime
 from pymongo import MongoClient
 from statistics import mean
@@ -76,6 +76,13 @@ def get_safe_env():
     for var in os.environ:
         if var in safe_vars:
             env[var] = os.environ[var]
+    
+    git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+    git_hash    = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+    git_author  = subprocess.check_output(["git", "log", "--format='%an'", "HEAD", "-n1"]).strip().decode("utf-8").strip("'")
+    (env["CI_COMMIT_REF_NAME"],env["CI_COMMIT_SHA"],env["CI_COMMIT_AUTHOR"]) = (git_branch,git_hash,git_author)
+    if ("CI_PIPELINE_SOURCE" not in env) : env["CI_PIPELINE_SOURCE"] = "push"
+    if ("CI_JOB_NAME" not in env)        : env["CI_JOB_NAME"]        = "local_run"
     return env
 
 parser = argparse.ArgumentParser(description='Test output parser 0.1. This program parses output of tests and reports the stats.')
@@ -698,6 +705,7 @@ summary = {
 #
 # METRICS
 #
+metrics_unique_tests = list(set(d['TEST'] for d in run_id_to_metrics.values() if 'TEST' in d))
 metrics_unique_suites = list(set(d['SUITE'] for d in run_id_to_metrics.values() if 'SUITE' in d))
 
 
@@ -720,6 +728,7 @@ metrics = {
       'pct-fail': (100*len(failed_test_ids))/float(len(set_of_all_run_ids)),
       'pct-crash': (100*len(not_properly_exited_tess))/float(len(set_of_all_run_ids)),
   },
+  'by-test' : {},
   'by-suite' : {}
 }
 
@@ -777,7 +786,25 @@ for suite in metrics_unique_suites:
                                  'pct-fail': (100*len(tests_failed))/float(len(tests)),
                                  'pct-crash': (100*num_tests_not_properly_exited)/float(len(tests)),
                                  'runs' : {}}
-    mbt = metrics['by-suite'][suite]
+
+for test in metrics_unique_tests:
+    tests = [d for d in run_id_to_metrics.values() if d.get('TEST','') == test]
+    tests_passed = [d for d in tests if d['run_id'] in passed_test_ids]
+    tests_failed = [d for d in tests if d['run_id'] in failed_test_ids]
+    num_tests_not_properly_exited = len(tests) - (len(tests_passed)+len(tests_failed))
+    metrics['by-test'][test] = { 'avg-cycles-per-second': mean_with_key(tests, 'SIM-CYCLES-PER-SECOND'),
+                                 'avg-walltime-seconds': mean_with_key(tests, 'SIM-WALLTIME-SECONDS'),
+                                 'avg-cycles': mean_with_key(tests, 'SIM-CYCLES'),
+                                 'total-passed': len(tests_passed),
+                                 'total-failed': len(tests_failed),
+                                 'total-tests': len(tests),
+                                 'total-crash': num_tests_not_properly_exited,
+                                 'pct-of-total-runs': (100*len(tests))/float(len(set_of_all_run_ids)),
+                                 'pct-pass': (100*len(tests_passed))/float(len(tests)),
+                                 'pct-fail': (100*len(tests_failed))/float(len(tests)),
+                                 'pct-crash': (100*num_tests_not_properly_exited)/float(len(tests)),
+                                 'runs' : {}}
+    mbt = metrics['by-test'][test]
     for test in tests:
         run_id = test['run_id']
         res = "crash"
@@ -803,8 +830,6 @@ for suite in metrics_unique_suites:
                     param_name_value=param_record(test=test['TEST'], type="genarg",name=m.group(1),val=m.group(2),result=res)
                     if param_name_value is not None:
                         rid_metrics["genargs"].append(( m.group(1), m.group(2), param_name_value ))
-
-
 print ('')
 print (bcolors.UNDERLINE + 'Summary By Suite:' + bcolors.ENDC)
 print ('')
@@ -875,7 +900,7 @@ def flatten_metrics_for_kibana(metrics, safe_env):
     om['system'] = plat_sys
     om['host'] = host
     res = [ om ]
-    for test_name, test_metrics in metrics['by-suite'].items():
+    for test_name, test_metrics in metrics['by-test'].items():
         tm = test_metrics.copy()
         runs = tm.pop('runs') # We'll flatten these below into their own items
         tm['metric-type'] = 'test-overall'

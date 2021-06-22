@@ -243,7 +243,7 @@ def vsc_compile():
 # -------------------------------
 def testRunInParallel(test, seed, meta):
     try: 
-        (id, suite, base, ttx, spec_args)  = (meta.test_spec[test]["id"], meta.test_spec[test]["suite"], meta.test_spec[test]["base"], meta.test_spec[test]["ttx"], meta.test_spec[test]["args"])
+        (id, suite, base, fw, ttx, spec_args)  = (meta.test_spec[test]["id"], meta.test_spec[test]["suite"], meta.test_spec[test]["base"], meta.test_spec[test]["fw"], meta.test_spec[test]["ttx"], meta.test_spec[test]["args"])
         (genargs, plusargs)         = (meta.args["genargs"], meta.args["plusargs"])
         cfg_args = {}
         cfg_hash = {}
@@ -293,7 +293,7 @@ def testRunInParallel(test, seed, meta):
         msg = '   --> [{0:3}: {1:30} : {2}] : Executing {3}'.format(id, test, os.getpid(), meta.test_current_stage(test))
         logger.info(msg)
         f_test_log.write(msg+"\n");
-        cmd = "  cd {0}; ln -sf {1}/fw/{4} fw && {1}/ttx/{2}/{2} {3} &> {0}/ttx_gen.log".format(test_rundir, pubdir, ttx, cfg_args["genargs"], spec["fw"])
+        cmd = "  cd {0}; ln -sf {1}/fw/{2} fw && {1}/ttx/{3}/{3} {4} &> {0}/ttx_gen.log".format(test_rundir, pubdir, fw, ttx, cfg_args["genargs"])
         f_test_log.write(cmd+"\n");
         ret  = meta.exec_subprocess(cmd)["returncode"]
         if ret != 0: raise Exception("Die run_test.py!")
@@ -321,6 +321,7 @@ def testRunInParallel(test, seed, meta):
 <RERUN-COMMAND> N/A
 '''.format(_test=test, _suite=suite, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
         f.writelines(info + "\n")
+        f.flush()
         f.close
         #  -> run vcs
         meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_2.name, log)
@@ -328,7 +329,7 @@ def testRunInParallel(test, seed, meta):
         logger.info(msg)
         f_test_log.write(msg+"\n")
         vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
-        cmd  = "  cd {0}; trap 'echo kill -9 $PID; kill -9 $PID' SIGINT SIGTERM EXIT; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6} & PID=$!; wait $PID; EXIT_STATUS=$?".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
+        cmd  = "  cd {0}; trap 'echo kill -9 $PID; kill -9 $PID' SIGINT SIGTERM; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6} & PID=$!; wait $PID; EXIT_STATUS=$?".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
         f_test_log.write(cmd+"\n")
         sys.stdout.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
@@ -336,13 +337,15 @@ def testRunInParallel(test, seed, meta):
         if ret != 0: raise Exception("Die run_test.py!")
         meta.update_test_status(test, "PASS")
         f_test_log.write("\n<TEST-PASSED>");
+        f_test_log.flush()
         f_test_log.close()
     except KeyboardInterrupt:
         msg = '   --> [{0:3}: {1:30} : {2}] : Received Ctrl-C'.format(id, test, os.getpid())
         logger.error(msg) 
+        f_test_log.close()
         pass
     except Exception:
-        msg = '  --> [{0:3}: {1:30} : {2}] : Failed to exec {3}'.format(id, test, os.getpid(), meta.test_current_stage(test))
+        msg = '   --> [{0:3}: {1:30} : {2}] : Failed to exec {3}'.format(id, test, os.getpid(), meta.test_current_stage(test))
         logger.error(msg) 
         meta.update_test_status(test, "FAIL")
         f_test_log.write(msg+"\n");
@@ -358,7 +361,7 @@ def vsc_run(meta):
     pool = multiprocessing.Pool(mproc)
     meta.proc.append(pool)
     for test,spec in sorted(test_spec.items()):
-        if (args["dump"]):  spec["args"] += ["--vcdfile=waveform.vcd"]
+        if (args["dump"]):  spec["args"] += ["+FSDB_DUMP_ENABLE"]
         if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
@@ -471,12 +474,12 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("")
-        logger.error('Ctrl-C triggered')
+        logger.error('[Main] Ctrl-C triggered')
         for p in meta.proc: 
           logger.error("   Killing process: {}".format(p))
           p.terminate()
     except multiprocessing.TimeoutError:
-        logger.error('Timeout triggered')
+        logger.error('[Main] Timeout triggered')
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
