@@ -34,17 +34,20 @@ manager = multiprocessing.Manager()
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
+    PASSRATE_THRESHOLD = 97
 
     start_time  = time.time()
     proc        = []
     test_spec   = {}
     args        = None
+    passrate    = 0.0
     stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
     test_stages = manager.dict() # {test: {current: "", stages: [{stage: "", status: ""}]}}
     def __init__(self, test_spec, args):
         self.id = random.getrandbits(32)
         self.test_spec         = test_spec
         self.args              = args
+        self.passrate          = manager.Value('d', 0.0)
         self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,spec in sorted(test_spec.items()): 
@@ -90,6 +93,8 @@ class Meta:
         self.test_stages[test]["stages"][i]["duration"] = time.strftime('%H:%M:%S', time.gmtime(time.time()-self.start_time))
         if (status == "FAIL"): self.test_stages[test]["stages"][0]["status"] = status
         self.test_stages[test]["stages"][0]["duration"] = self.test_stages[test]["stages"][i]["duration"]
+        results = [test_hash["stages"][0]["status"] for test,test_hash in self.test_stages.items()]
+        self.passrate.value = results.count("PASS")/len(results)*100
         return i
     def test_current_stage(self, test):
         return self.test_stages[test]["current"]

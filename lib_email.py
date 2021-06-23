@@ -9,7 +9,7 @@ from pprint import pprint
 # -------------------------------
 # Email
 def construct_email_context(meta):
-    status      = meta.stages["stages"][0]["status"]
+    status      = "PASS" if (meta.passrate.value > meta.PASSRATE_THRESHOLD) else "FAIL" 
     root        = os.environ.get('ROOT')
     host        = platform.node()
     git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
@@ -20,7 +20,7 @@ def construct_email_context(meta):
     email_body_header = "<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n"
     #Body
     email_body = '''\
-<span style='font-size: 22px'><b> TENSIX_RUN_TEST REPORT </b> - <span style = 'color:{_color}';>{_status}({_stage})</span></span><hr>
+<span style='font-size: 22px'><b> TENSIX_RUN_TEST REPORT </b> - <span style = 'color:{_color}';>{_status}({_passrate:.1f}%)</span></span><hr>
 <table style='border:0px;font-size:12px'>
   <tr class='row'><td class='key'>Sanity Run ID :</td><td class='value'>{_id}</td></tr>
   <tr class='row'><td class='key'>Workspace :</td><td class='value'>({_host}) {_root}</td></tr>
@@ -29,7 +29,7 @@ def construct_email_context(meta):
   <tr class='row'><td class='key'>Cmdline:</td><td class='value'>{_cmdline}</td></tr>
 </table>
 </br>
-'''.format(_color="green" if (status == "PASS") else "red", _status=status, _stage=meta.stages["current"], _id=meta.id, _host=host, _root=root, _git_hash=git_hash, _git_branch=git_branch, _cmdline=meta.cmdline())
+'''.format(_color="green" if (status == "PASS") else "red", _status=status, _passrate=meta.passrate.value, _id=meta.id, _host=host, _root=root, _git_hash=git_hash, _git_branch=git_branch, _cmdline=meta.cmdline())
     #   -> Sanity summary
     total = len(meta.test_stages)
     failed= len([hash["stages"][0] for test,hash in meta.test_stages.items() if hash["stages"][0]['status']=="FAIL"])
