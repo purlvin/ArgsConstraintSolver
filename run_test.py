@@ -34,15 +34,16 @@ manager = multiprocessing.Manager()
 class Meta:
     STG      = Enum('STG', 'PREBUILD SIM_BUILD_1 SIM_BUILD_2 SIM_RUN')
     TEST_STG = Enum('TEST_STG', 'VCS_RUN_1 TTX_GEN CKTI VCS_RUN_2')
-    PASSRATE_THRESHOLD = 97
 
-    start_time  = time.time()
-    proc        = []
-    test_spec   = {}
-    args        = None
-    passrate    = 0.0
-    stages      = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
-    test_stages = manager.dict() # {test: {current: "", stages: [{stage: "", status: ""}]}}
+    start_time          = time.time()
+    passrate_threshold  = 97
+    email               = "{}@mkdcmail.amd.com".format(os.environ.get('USER'))
+    proc                = []
+    test_spec           = {}
+    args                = None
+    passrate            = 0.0
+    stages              = {} # {test: {current: "", stages: [{stage: "", status: ""}]}}
+    test_stages         = manager.dict() # {test: {current: "", stages: [{stage: "", status: ""}]}}
     def __init__(self, test_spec, args):
         self.id = random.getrandbits(32)
         self.test_spec         = test_spec
@@ -53,6 +54,8 @@ class Meta:
         for test,spec in sorted(test_spec.items()): 
             self.test_stages[test]            = manager.dict({"seed": "N/A", "current": "N/A", "stages": manager.list([manager.dict({"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")})])}) 
             self.test_stages[test]["stages"] += manager.list([manager.dict({"stage": stage.name, "status": "N/A", "duration": "N/A"}) for stage in self.TEST_STG])
+        if (args["passrate_threshold"]): self.passrate_threshold = args["passrate_threshold"]
+        if (args["email"]):              self.email= args["email"]
     def id(self):
         return self.id
     def cmdline(self):
@@ -416,19 +419,21 @@ def main():
 
     # Construct the argument parser
     ap = argparse.ArgumentParser()
-    ap.add_argument("test", nargs='?',       help="Test name")
-    ap.add_argument("-w",   "--when",        help="When groups nane")
-    ap.add_argument("-s",   "--seed",        help="Seed")
-    ap.add_argument('-ga',  "--genargs",     help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
-    ap.add_argument('-pa',  "--plusargs",    help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
-    ap.add_argument("-m",   "--mproc",       default=os.cpu_count(), help="Set maximum parallel processes, default max number of CPUs")
-    ap.add_argument("-tmo", "--timeout",     default=None, help="Set timeout in seconds, default no timeout")
-    ap.add_argument("-c",   "--clean",       action="store_true", help="Remove out directories")
-    ap.add_argument("-dbg", "--debug",       action="store_true", help="Simplify TTX data")
-    ap.add_argument("-dp",  "--dump",        action="store_true", help="Dump FSDB waveform")
-    ap.add_argument("-udb", "--upload_db",   action="store_true", help="Upload result to database")
-    ap.add_argument("-jsb", "--j_sim_build", action="store_true", help="Jump to sim build")
-    ap.add_argument("-jsr", "--j_sim_run",   action="store_true", help="Jump to sim run")
+    ap.add_argument("test", nargs='?',              help="Test name")
+    ap.add_argument("-w",   "--when",               help="When groups nane")
+    ap.add_argument("-s",   "--seed",               help="Seed")
+    ap.add_argument('-ga',  "--genargs",            help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
+    ap.add_argument('-pa',  "--plusargs",           help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
+    ap.add_argument("-em",   "--email",             help="Set email address to recieve test run result")
+    ap.add_argument("-tmo", "--timeout",            help="Set timeout in seconds, default no timeout")
+    ap.add_argument("-prt", "--passrate_threshold", type=float, help="Set tests passrate threshold")
+    ap.add_argument("-m",   "--mproc",              default=os.cpu_count(), help="Set maximum parallel processes, default max number of CPUs")
+    ap.add_argument("-c",   "--clean",              action="store_true", help="Remove out directories")
+    ap.add_argument("-dbg", "--debug",              action="store_true", help="Simplify TTX data")
+    ap.add_argument("-dp",  "--dump",               action="store_true", help="Dump FSDB waveform")
+    ap.add_argument("-udb", "--upload_db",          action="store_true", help="Upload result to database")
+    ap.add_argument("-jsb", "--j_sim_build",        action="store_true", help="Jump to sim build")
+    ap.add_argument("-jsr", "--j_sim_run",          action="store_true", help="Jump to sim run")
     global args
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "quick"
@@ -488,5 +493,6 @@ if __name__ == "__main__":
     finally:
         if 'meta' in globals():
             logger.info(' Sending Email...')
-            send_email(meta)
+            status = "PASS" if (meta.passrate.value > meta.passrate_threshold) else "FAIL" 
+            if (status == "FAIL"): send_email(meta, status)
 

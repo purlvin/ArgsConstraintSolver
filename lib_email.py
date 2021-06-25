@@ -8,8 +8,7 @@ from pprint import pprint
 
 # -------------------------------
 # Email
-def construct_email_context(meta):
-    status      = "PASS" if (meta.passrate.value > meta.PASSRATE_THRESHOLD) else "FAIL" 
+def construct_email_context(meta, status):
     root        = os.environ.get('ROOT')
     host        = platform.node()
     git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
@@ -73,17 +72,16 @@ def construct_email_context(meta):
     email_body = email_body_header + email_body + email_end_tags;
     return (email_subject, email_body);
 
-def send_email(meta):
-    user         = os.environ.get('USER')
-    subject,body = construct_email_context(meta)
+def send_email(meta, status):
+    subject,body = construct_email_context(meta, status)
     body = '''\
-To: {_user}@mkdcmail.amd.com
+To: {_email}
 Subject: {_subject}
 Content-Type: text/html
 
 <FONT FACE=courier>
 {_body}
 </FONT>
-'''.format(_user=user, _subject=subject, _body=body)
+'''.format(_email=meta.email, _subject=subject, _body=body)
     return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
 
