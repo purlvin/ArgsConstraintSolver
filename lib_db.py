@@ -70,6 +70,7 @@ def get_safe_env():
         "CI_BUILD_NAME",              # :       "post-commit",
         # The ones below are added by us (ie. they are not part of OS environment or Gitlabs vars)
         "CI_ZVERSIM_JOB_DESCRIPTION", # : "Description"
+        "JK_BUILD_URL",               # : "Jenkins link"
         "CI_ZVERSIM_SCRIPT"
     }
     env = { }
@@ -80,7 +81,9 @@ def get_safe_env():
     git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
     git_hash    = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
     git_author  = subprocess.check_output(["git", "log", "--format='%an'", "HEAD", "-n1"]).strip().decode("utf-8").strip("'")
-    (env["CI_COMMIT_REF_NAME"],env["CI_COMMIT_SHA"],env["CI_COMMIT_AUTHOR"]) = (git_branch,git_hash,git_author)
+    if ("CI_COMMIT_REF_NAME" not in env) : env["CI_COMMIT_REF_NAME"] = git_branch
+    if ("CI_COMMIT_SHA" not in env)      : env["CI_COMMIT_SHA"]      = git_hash
+    if ("CI_COMMIT_AUTHOR" not in env)   : env["CI_COMMIT_AUTHOR"]   = git_author
     if ("CI_PIPELINE_SOURCE" not in env) : env["CI_PIPELINE_SOURCE"] = "push"
     if ("CI_JOB_NAME" not in env)        : env["CI_JOB_NAME"]        = "local_run"
     return env

@@ -37,7 +37,6 @@ class Meta:
 
     start_time          = time.time()
     passrate_threshold  = 97
-    email               = "{}@mkdcmail.amd.com".format(os.environ.get('USER'))
     proc                = []
     test_spec           = {}
     args                = None
@@ -55,7 +54,6 @@ class Meta:
             self.test_stages[test]            = manager.dict({"seed": "N/A", "current": "N/A", "stages": manager.list([manager.dict({"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")})])}) 
             self.test_stages[test]["stages"] += manager.list([manager.dict({"stage": stage.name, "status": "N/A", "duration": "N/A"}) for stage in self.TEST_STG])
         if (args["passrate_threshold"]): self.passrate_threshold = args["passrate_threshold"]
-        if (args["email"]):              self.email= args["email"]
     def id(self):
         return self.id
     def cmdline(self):
@@ -321,13 +319,13 @@ def testRunInParallel(test, seed, meta):
         log = os.path.join(test_rundir, "vcs_run.log")
         f = open(log, "w")
         info = '''\
-<BUILDARGS> TEST={_test} SUITE={_suite} SIM=vcs TENSIX_GRID_SIZE=1x1
+<BUILDARGS> TEST={_test} SUITE={_suite} SEED={_seed} 
 <GENARGS> {_genargs} 
 <SIMARGS>
 <PLUSARGS> {_plusargs}
 <TAG> {_id} 
 <RERUN-COMMAND> N/A
-'''.format(_test=test, _suite=suite, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
+'''.format(_test=test, _suite=suite, _seed=seed, _genargs=cfg_args["genargs"], _plusargs=cfg_args["plusargs"], _id=id, _cmd=meta.cmdline())
         f.writelines(info + "\n")
         f.flush()
         f.close
@@ -424,7 +422,6 @@ def main():
     ap.add_argument("-s",   "--seed",               help="Seed")
     ap.add_argument('-ga',  "--genargs",            help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
     ap.add_argument('-pa',  "--plusargs",           help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
-    ap.add_argument("-em",   "--email",             help="Set email address to recieve test run result")
     ap.add_argument("-tmo", "--timeout",            help="Set timeout in seconds, default no timeout")
     ap.add_argument("-prt", "--passrate_threshold", type=float, help="Set tests passrate threshold")
     ap.add_argument("-m",   "--mproc",              default=os.cpu_count(), help="Set maximum parallel processes, default max number of CPUs")
@@ -492,7 +489,8 @@ if __name__ == "__main__":
         logger.error('[Main] Timeout triggered')
     finally:
         if 'meta' in globals():
-            logger.info(' Sending Email...')
-            status = "PASS" if (meta.passrate.value > meta.passrate_threshold) else "FAIL" 
-            if (status == "FAIL"): send_email(meta, status)
+            status = "PASS" if (meta.passrate.value >= meta.passrate_threshold) else "FAIL" 
+            if (status == "FAIL"): 
+              logger.info(' Sending Email...')
+              send_email(meta, status)
 

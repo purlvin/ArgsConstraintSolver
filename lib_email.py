@@ -73,15 +73,16 @@ def construct_email_context(meta, status):
     return (email_subject, email_body);
 
 def send_email(meta, status):
+    user         = os.environ.get('USER')
     subject,body = construct_email_context(meta, status)
     body = '''\
-To: {_email}
+To: {_user}@tenstorrent.com, mchit@tenstorrent.com
 Subject: {_subject}
 Content-Type: text/html
 
 <FONT FACE=courier>
 {_body}
 </FONT>
-'''.format(_email=meta.email, _subject=subject, _body=body)
+'''.format(_user=user,  _subject=subject, _body=body)
     return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
 
