@@ -286,6 +286,7 @@ def testRunInParallel(test, seed, meta):
                 cfg_hash[k][a[0]] = a[1] if len(a)>1 else None
             cfg_args[k] = ""
             for kk,vv in sorted(cfg_hash[k].items()):
+                if (vv.upper() == "REMOVE") : continue
                 cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
         for x in ["genargs", "plusargs"] :
             cfg = os.path.join(test_rundir, x + ".cfg")
