@@ -24,6 +24,7 @@ pubdir      = os.path.join(outdir,  "pub")
 simdir      = os.path.join(outdir,  "sim")
 simdir_stg1 = os.path.join(simdir,  "stg1")
 rundir      = os.path.join(outdir,  "run")
+srcdir      = os.path.join(root,    "src")
 logger      = logging.getLogger()
 log         = os.path.join(outdir,  "run_test.log")
 
@@ -175,14 +176,15 @@ def get_test_spec(yml, tgt_test, tgt_group):
 
 # -------------------------------
 def env_cleanup():
-    outdir = "{0}/out".format(root)
+  for path, dirs, files in os.walk(srcdir) :
+    if ("out" in dirs):
+      dir = os.path.join(path, "out")
+      if os.path.exists(dir): os.system("mv {0} {0}.old && rm -rf {0}.old ".format(dir))
     for dir in [pubdir, simdir, simdir_stg1, rundir]:
-        if os.path.exists(dir): shutil.rmtree(dir)
         os.makedirs(dir, exist_ok=True)
-    outdir = "{0}/out".format(testdir)
-    if os.path.exists(outdir): shutil.rmtree(outdir)
-    outdir = "{0}/tvm_tb/out".format(tbdir)
-    if os.path.exists(outdir): shutil.rmtree(outdir)
+  os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(rundir))
+  os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(pubdir))
+  os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(simdir))
 
 # -------------------------------
 def prebuild(meta):
@@ -193,15 +195,24 @@ def prebuild(meta):
 export ROOT={0}
 echo -e "-- STAGE build_tools --"
 cd $ROOT/ && make -j 64
+echo -e "-- STAGE build: $ROOT/src/software/assembler --"
 cd $ROOT/src/software/assembler && make -j 64
+echo -e "-- STAGE build: $ROOT/src/software/command_assembler --"
 cd $ROOT/src/software/command_assembler && make -j 64
+echo -e "-- STAGE build: $ROOT/src/test_ckernels/ckti --"
 cd $ROOT/src/test_ckernels/ckti && make -j 64
+echo -e "-- STAGE build: $ROOT/src/test_ckernels/gen --"
 cd $ROOT/src/test_ckernels/gen && make -j 64
+echo -e "-- STAGE build: $ROOT/src/test_ckernels/src --"
 cd $ROOT/src/test_ckernels/src && make -j 64
+echo -e "-- STAGE build: $ROOT/src/t6ifc/vcs-core/tvm_tb --"
 cd $ROOT/src/t6ifc/vcs-core/tvm_tb && make SIM=vcs -j 64
 echo -e "-- STAGE build_firmware --"
 cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/main
 cd $ROOT/ && make -j 64 -f src/hardware/tb_tensix/tests/single-core-synth-ckernel-mailbox/fw/Makefile TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR=$ROOT/out/pub/fw/single-core-synth-ckernel-mailbox
+cd $ROOT/src/hardware/tb_tensix/tests && export FW_DEFINES="-DENABLE_TENSIX_TRISC_RESET"; export OUTPUT_DIR=$ROOT/out/pub/fw/single-core-reset-1 && make -f single-core-reset/test.mk && make -C $ROOT/src/firmware/riscv/targets/ncrisc
+cd $ROOT/src/hardware/tb_tensix/tests && export FW_DEFINES="-DENABLE_TENSIX_TRISC_RESET -DENABLE_TENSIX_TRISC_RESE"; export OUTPUT_DIR=$ROOT/out/pub/fw/single-core-reset-2 && make -f single-core-reset/test.mk && make -C $ROOT/src/firmware/riscv/targets/ncrisc
+cd $ROOT/src/hardware/tb_tensix/tests && export FW_DEFINES="-DENABLE_TENSIX_TRISC_PC_OVERRIDE"; export OUTPUT_DIR=$ROOT/out/pub/fw/single-core-reset-3 && make -f single-core-reset/test.mk && make -C $ROOT/src/firmware/riscv/targets/ncrisc
 echo -e "-- STAGE build_test_generator --"
 '''.format(root)
     for ttx in list(set([spec["ttx"] for test,spec in test_spec.items()])):
@@ -278,7 +289,7 @@ def testRunInParallel(test, seed, meta):
             cfg_args[x] = f.read().strip().split("\n")
             cfg_hash[x] = {}
             f.close
-        cfg_args["genargs"]  += genargs 
+        cfg_args["genargs"]  += genargs + ["--ttx={}".format(ttx)] 
         cfg_args["plusargs"] += spec_args + plusargs
         for k,v in cfg_args.items():
             k = k.split(".")[0]
@@ -442,7 +453,7 @@ def main():
     for k,v in args.items():
         if (v): logger.debug("  {} : {}".format(k, v))
     if args["j_sim_run"] : args["j_sim_build"] = True
-    if (args["upload_db"]) and os.path.exists(rundir): shutil.rmtree(rundir); os.makedirs(rundir, exist_ok=True)
+    if (args["upload_db"]): os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(rundir))
 
     # STEP 0: Env cleanup
     if (not args["j_sim_build"]):
