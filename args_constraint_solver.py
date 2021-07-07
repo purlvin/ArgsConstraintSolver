@@ -249,8 +249,8 @@ def gen_solver_sv(sv, spec, debug):
                 f.write('        $fdisplay({0}, "%s", args);\n'.format(fd))
             f.write('      end\n')
         if (int(debug) == 1): 
-            f.write('      cmd = {cmd, " {}debug"};\n')
-            f.write('      $fdisplay(fd_genargs, "%s", "{}debug");\n')
+            f.write('      cmd = {cmd, " --debug"};\n')
+            f.write('      $fdisplay(fd_genargs, "%s", "--debug");\n')
         f.write('    end\n\n')
     f.write('    $fclose(fd_genargs);\n')
     f.write('    $fclose(fd_plusargs);\n\n')
