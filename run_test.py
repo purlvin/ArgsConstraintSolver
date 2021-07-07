@@ -440,6 +440,7 @@ def main():
     ap.add_argument("-prt", "--passrate_threshold", type=float, help="Set tests passrate threshold")
     ap.add_argument("-m",   "--mproc",              default=os.cpu_count(), help="Set maximum parallel processes, default max number of CPUs")
     ap.add_argument("-c",   "--clean",              action="store_true", help="Remove out directories")
+    ap.add_argument("-sl",  "--show_list",          action="store_true", help="Print test list")
     ap.add_argument("-dbg", "--debug",              action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",               action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-udb", "--upload_db",          action="store_true", help="Upload result to database")
@@ -466,6 +467,13 @@ def main():
     ret = os.system(cmd)
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_spec = get_test_spec(yml, args["test"], args["when"])
+    if (args["show_list"]):
+      logger.info(" Found tests: ")
+      id = 0
+      for test in sorted(test_spec.keys()):
+        print("{:10}".format(id), ":", test)
+        id += 1
+      exit(0) 
     logger.info(" Found tests: " + str(sorted(test_spec.keys())))
     # STEP 0+: Update meta
     global meta
