@@ -11,6 +11,7 @@ templates:
     _constr_grps  : &__conv_t__constr_grps
       - *__math_t__constr_grps
       - suite_conv_default=1
+    _seed  : 0
     _args  : &__conv_t__args
       - *__math_t__args
       - +yml_conv=1

@@ -153,6 +153,7 @@ def get_test_spec(yml, tgt_test, tgt_group):
         info = {
             "id":       None,
             "base":     test,
+            "seed":     test_hash["_seed"] if ("_seed" in test_hash) else None,
             "suite":    test_hash["_suite"],
             "fw":       test_hash["_fw"],
             "ttx":      test_hash["_ttx"],
@@ -286,7 +287,7 @@ def testRunInParallel(test, seed, meta):
                 cfg_hash[k][a[0]] = a[1] if len(a)>1 else None
             cfg_args[k] = ""
             for kk,vv in sorted(cfg_hash[k].items()):
-                if (vv.upper() == "REMOVE") : continue
+                if ((vv) and (vv.upper() == "REMOVE")) : continue
                 cfg_args[k] += " {}={}".format(kk,vv) if vv != None else " {}".format(kk)
         for x in ["genargs", "plusargs"] :
             cfg = os.path.join(test_rundir, x + ".cfg")
@@ -370,7 +371,7 @@ def vsc_run(meta):
     for test,spec in sorted(test_spec.items()):
         if (args["dump"]):  spec["args"] += ["+FSDB_DUMP_ENABLE"]
         if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
-        seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else random.getrandbits(32)
+        seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else spec["seed"] if (None != spec["seed"]) else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
         iterable.append((test, seed, meta))
     p = pool.starmap_async(testRunInParallel, iterable)
