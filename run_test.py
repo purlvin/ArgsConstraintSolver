@@ -182,6 +182,7 @@ def env_cleanup():
       if os.path.exists(dir): os.system("mv {0} {0}.old && rm -rf {0}.old ".format(dir))
     for dir in [pubdir, simdir, simdir_stg1, rundir]:
         os.makedirs(dir, exist_ok=True)
+  os.system("cd {0} && make clean ".format(root))
   os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(rundir))
   os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(pubdir))
   os.system("mv {0} {0}.old && mkdir {0} && rm -rf {0}.old ".format(simdir))
