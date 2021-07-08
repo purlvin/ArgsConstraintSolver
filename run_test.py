@@ -465,6 +465,9 @@ def main():
     # STEP 0+: Test list
     cmd = " cd {0} && make gen DEBUG={1}".format(metadir, int(args["debug"]))
     ret = os.system(cmd)
+    if ret != 0: 
+      logger.error("Failed to generate constraints_solver.sv! \n  CMD: {0}".format(cmd)) 
+      raise Exception("Die run_test.py!")
     yml       = os.path.join(pubdir, "test_expanded.yml")
     test_spec = get_test_spec(yml, args["test"], args["when"])
     if (args["show_list"]):
