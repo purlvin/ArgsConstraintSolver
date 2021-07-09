@@ -370,6 +370,21 @@ def testRunInParallel(test, seed, meta):
         meta.update_test_status(test, "FAIL")
         f_test_log.write(msg+"\n");
         f_test_log.close()
+        
+        log = os.path.join(test_rundir, "vcs_run.log")
+        if not os.path.exists(log): 
+          f = open(log, "w")
+          info = '''\
+<BUILDARGS> TEST={_test} SUITE={_suite} SEED={_seed} 
+<GENARGS> {_genargs} 
+<SIMARGS>
+<PLUSARGS> {_plusargs}
+<TAG> {_id} 
+<RERUN-COMMAND> N/A
+'''.format(_test=test, _suite=suite, _seed=seed, _genargs=cfg_args["genargs"] if ("genargs" in cfg_args) else "--CONSTRAINT_RANDOM=FAIL", _plusargs=cfg_args["plusargs"] if ("genargs" in cfg_args) else "N/A", _id=id, _cmd=meta.cmdline())
+          f.writelines(info + "\n")
+          f.flush()
+          f.close
         pass
 def vsc_run(meta):
     (test_spec, args) = (meta.test_spec, meta.args)
@@ -381,13 +396,17 @@ def vsc_run(meta):
     pool = multiprocessing.Pool(mproc)
     meta.proc.append(pool)
     for test,spec in sorted(test_spec.items()):
-        if (args["dump"]):  spec["args"] += ["+FSDB_DUMP_ENABLE"]
+        if (args["dump"]):  
+          spec["args"] += ["+FSDB_DUMP_DISABLE=0"] 
+        else: 
+          spec["args"] += ["+FSDB_DUMP_DISABLE=1"]
         if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else spec["seed"] if (None != spec["seed"]) else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
         iterable.append((test, seed, meta))
     p = pool.starmap_async(testRunInParallel, iterable)
     p.get(timeout)
+    print("DEBUG:: timeout!!")
     pool.terminate()
 
 # -------------------------------
@@ -511,7 +530,10 @@ if __name__ == "__main__":
           logger.error("   Killing process: {}".format(p))
           p.terminate()
     except multiprocessing.TimeoutError:
+        sys.stdout.flush()
         logger.error('[Main] Timeout triggered')
+        logger.info(' STEP 4: Result report')
+        result_report(meta)
     finally:
         if 'meta' in globals():
             status = "PASS" if (meta.passrate.value >= meta.passrate_threshold) else "FAIL" 
