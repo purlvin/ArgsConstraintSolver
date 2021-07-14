@@ -253,7 +253,7 @@ def vsc_compile():
     log = "{_simdir}/vcs_compile.log".format(_simdir=simdir) 
     meta.start_stage(meta.STG.SIM_BUILD_2.name, log)
     logger.info('   --> Stage 2 VCS compile')
-    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+SIM=vcs -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
+    cmd = "  cd {0}; ./vcs-docker -fsdb -kdb -lca +vcs+lic+wait +define+ECC_ENABLE +define+NOVEL_ARGS_CONSTRAINT_TB -xprop=tmerge +define+MAILBOX_TARGET=6 {0}/tvm_tb/out/tvm_tb.so -f vcs.f  +incdir+{1} +define+SIM=vcs -sverilog -full64 -l vcs_compile.log -timescale=1ns/1ps -error=PCWM-W +lint=TFIPC-L -o {3}/simv -assert disable_cover -CFLAGS -LDFLAGS -lboost_system -L{4}/vendor/yaml-cpp/build -lyaml-cpp -lsqlite3 -lz -debug_acc+dmptf -debug_region+cell+encrypt -debug_access &> {5}".format(tbdir, pubdir, sv, simdir, root, log)
     ret = meta.exec_subprocess(cmd)["returncode"]
     if ret != 0:
       logger.error("Stage 2 VCS compile failed! \n  CMD: {0}".format(cmd)) 
@@ -393,7 +393,7 @@ def vsc_run(meta):
     meta.start_stage(meta.STG.SIM_RUN.name, "")
     iterable = []
     mproc   = int(args["mproc"])
-    timeout = int(args["timeout"]) - int(time.time()-Meta.start_time) if args["timeout"] else None
+    timeout = int(args["timeout"]) - int(time.time()-Meta.start_time) if args["timeout"] else 14400
     logger.info(' [{}] : Kicking off {} processes in parallel(timeout: {})'.format(os.getpid(), mproc, "{} s".format(timeout) if timeout else None))
     pool = multiprocessing.Pool(mproc)
     meta.proc.append(pool)
@@ -408,7 +408,6 @@ def vsc_run(meta):
         iterable.append((test, seed, meta))
     p = pool.starmap_async(testRunInParallel, iterable)
     p.get(timeout)
-    print("DEBUG:: timeout!!")
     pool.terminate()
 
 # -------------------------------
@@ -418,6 +417,26 @@ def result_report(meta):
     for test,spec in sorted(test_spec.items()):
         test_status = Colors.RED + "FAIL" + Colors.END
         run_log = os.path.join(rundir, test, "test.log")
+        if not os.path.exists(run_log): 
+          os.makedirs(os.path.join(rundir, test), exist_ok=True)
+          tmplog = os.path.join(rundir, test, "test.log")
+          f = open(tmplog, "w")
+          f.writelines("NOT STARTED!\n")
+          f.flush()
+          f.close
+          tmplog = os.path.join(rundir, test, "vcs_run.log")
+          f = open(tmplog, "w")
+          info = '''\
+<BUILDARGS> TEST={_test} SUITE={_suite} SEED={_seed} 
+<GENARGS> {_genargs} 
+<SIMARGS>
+<PLUSARGS> {_plusargs}
+<TAG> {_id} 
+<RERUN-COMMAND> N/A
+'''.format(_test=test, _suite=spec["suite"], _seed=spec["seed"], _genargs="--CONSTRAINT_RANDOM=NOT_RUN", _plusargs="N/A", _id=spec["id"])
+          f.writelines(info + "\n")
+          f.flush()
+          f.close
         if ("<TEST-PASSED>" in open(run_log).read()): 
             test_status =  Colors.GREEN + "PASS" + Colors.END
             logger.debug("  {0:-3} - {1:30} (seed={4}) : {2} {3}".format(spec["id"], test, test_status, "", meta.test_stages[test]["seed"])) 
@@ -459,7 +478,7 @@ def main():
     ap.add_argument('-pa',  "--plusargs",           help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
     ap.add_argument("-tmo", "--timeout",            help="Set timeout in seconds, default no timeout")
     ap.add_argument("-prt", "--passrate_threshold", type=float, help="Set tests passrate threshold")
-    ap.add_argument("-m",   "--mproc",              default=os.cpu_count(), help="Set maximum parallel processes, default max number of CPUs")
+    ap.add_argument("-m",   "--mproc",              default=os.cpu_count()/2, help="Set maximum parallel processes, default max number of CPUs")
     ap.add_argument("-c",   "--clean",              action="store_true", help="Remove out directories")
     ap.add_argument("-sl",  "--show_list",          action="store_true", help="Print test list")
     ap.add_argument("-dbg", "--debug",              action="store_true", help="Simplify TTX data")
