@@ -48,3 +48,5 @@ testcases:
     _clones : 5
     _constr_grps : 
       - *__conv_t__constr_grps
+    _when  : 
+      [*__conv_t__when, "never"]

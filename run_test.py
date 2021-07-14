@@ -160,9 +160,11 @@ def get_test_spec(yml, tgt_test, tgt_group):
             "ttx":      test_hash["_ttx"],
             "args":     flatten_list(test_hash["_args"]),
         }
+        groups = flatten_list(test_hash["_when"])
+        if (len([grp for grp in groups if ("NEVER" == grp.upper())])>0): continue;
         if ((tgt_test) and (tgt_test.split("__")[0] == test)):
             test_spec[tgt_test] = info
-        elif (tgt_group in flatten_list(test_hash["_when"])):
+        elif (tgt_group in groups):
             test_spec[test] = info
             if ("_clones" in test_hash): 
                 for i in range(test_hash["_clones"]): 
