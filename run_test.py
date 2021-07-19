@@ -193,79 +193,73 @@ def env_cleanup():
 # -------------------------------
 def prebuild(meta):
     (test_spec) = (meta.test_spec)
-    log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
-    meta.start_stage(meta.STG.PREBUILD.name, log)
-    f = open(log, "w")
+    prebuild_log = "{_pubdir}/prebuild.log".format(_pubdir=pubdir) 
+    meta.start_stage(meta.STG.PREBUILD.name, prebuild_log)
+    f = open(prebuild_log, "w")
+    logdir = "{_pubdir}/prebuild".format(_pubdir=pubdir)
+    os.makedirs(logdir, exist_ok=True)
+    def add_pool_task(dir, name, margs):
+        log = os.path.join(logdir, name.replace(root,"ROOT").replace("/","_")+".log");
+        cmd  = "cd {0} && make -j 64 {1} &> {2}".format(dir, margs.replace("#log#",log), log)
+        f.writelines("\n->> Build {0} ({1})\n  CMD: {2}\n".format(name, log, cmd));  f.flush()
+        meta.pool_results[name] = [pool.apply_async(meta.exec_subprocess, (cmd,)), log]
     # Serialized tasks
     pool = ThreadPool(1)
     #   -> $ROOT
-    path = "{0}".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = root; name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     #   -> $ROOT/src/test_ckernels/gen
-    path = "{0}/src/test_ckernels/gen".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/test_ckernels/gen".format(root); name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     pool.close()
     pool.join()
     # Parallelized tasks
     pool = ThreadPool(os.cpu_count())
     #   -> $ROOT/src/software/assembler
-    path = "{0}/src/software/assembler".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/software/assembler".format(root); name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     #   -> $ROOT/src/software/command_assembler
-    path = "{0}/src/software/command_assembler".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/software/command_assembler".format(root); name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     #   -> $ROOT/src/test_ckernels/ckti
-    path = "{0}/src/test_ckernels/ckti".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/test_ckernels/ckti".format(root); name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     #   -> $ROOT/src/test_ckernels/src
-    path = "{0}/src/test_ckernels/src".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/test_ckernels/src".format(root); name = dir; margs = "";
+    add_pool_task(dir, name, margs)
     #   -> $ROOT/src/t6ifc/vcs-core/tvm_tb
-    path = "{0}/src/t6ifc/vcs-core/tvm_tb".format(root); name = "Build {0}".format(path); cmd  = "cd {1} && make SIM=vcs -j 64 &>> {2}".format(name, path, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/t6ifc/vcs-core/tvm_tb".format(root); name = dir; margs = "SIM=vcs";
+    add_pool_task(dir, name, margs)
     #   -> firmware
-    name = "Build firmware".format(path); cmd  = "cd {1}/src/hardware/tb_tensix/tests && make -j 64 -f firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR={1}/out/pub/fw/main &>> {2}".format(name, root, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/hardware/tb_tensix/tests".format(root); name = "firmware"; margs = "-f firmware.mk TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR={0}/out/pub/fw/main".format(root);
+    add_pool_task(dir, name, margs)
     #   -> firmware/single-core-synth-ckernel-mailbox
-    name = "Build firmware/single-core-synth-ckernel-mailbox".format(path); cmd  = "cd {1}/src/hardware/tb_tensix/tests/single-core-synth-ckernel-mailbox/fw && make -j 64 -f Makefile TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR={1}/out/pub/fw/single-core-synth-ckernel-mailbox &>> {2}".format(name, root, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/hardware/tb_tensix/tests/single-core-synth-ckernel-mailbox/fw".format(root); name = "firmware/single-core-synth-ckernel-mailbox"; margs = "-f Makefile TENSIX_GRID_SIZE_X=1 TENSIX_GRID_SIZE_Y=1 OUTPUT_DIR={0}/out/pub/fw/single-core-synth-ckernel-mailbox".format(root);
+    add_pool_task(dir, name, margs)
     #   -> firmware/single-core-reset-1
-    name = "Build firmware/single-core-reset-1".format(path); cmd  = "cd {1}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_RESET'; export OUTPUT_DIR={1}/out/pub/fw/single-core-reset-1 && make -j 64 -f single-core-reset/test.mk  &>> {2} && make -C {1}/src/firmware/riscv/targets/ncrisc  &>> {2}".format(name, root, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_RESET' OUTPUT_DIR={0}/out/pub/fw/single-core-reset-1".format(root); name = "firmware/single-core-reset-1"; margs = "-f single-core-reset/test.mk  &> #log# && make -C {0}/src/firmware/riscv/targets/ncrisc".format(root);
+    add_pool_task(dir, name, margs)
     #   -> firmware/single-core-reset-2
-    name = "Build firmware/single-core-reset-2".format(path); cmd  = "cd {1}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_RESET -DENABLE_TENSIX_TRISC_RESE'; export OUTPUT_DIR={1}/out/pub/fw/single-core-reset-2 && make -j 64 -f single-core-reset/test.mk  &>> {2} && make -C {1}/src/firmware/riscv/targets/ncrisc  &>> {2}".format(name, root, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_RESET -DENABLE_TENSIX_TRISC_RESE' OUTPUT_DIR={0}/out/pub/fw/single-core-reset-2".format(root); name = "firmware/single-core-reset-2"; margs = "-f single-core-reset/test.mk  &> #log# && make -C {0}/src/firmware/riscv/targets/ncrisc".format(root);
+    add_pool_task(dir, name, margs)
     #   -> firmware/single-core-reset-3
-    name = "Build firmware/single-core-reset-3".format(path); cmd  = "cd {1}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_PC_OVERRIDE'; export OUTPUT_DIR={1}/out/pub/fw/single-core-reset-3 && make -j 64 -f single-core-reset/test.mk &>> {2} && make -C {1}/src/firmware/riscv/targets/ncrisc  &>> {2}".format(name, root, log)
-    f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-    meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+    dir = "{0}/src/hardware/tb_tensix/tests && export FW_DEFINES='-DENABLE_TENSIX_TRISC_PC_OVERRIDE' OUTPUT_DIR={0}/out/pub/fw/single-core-reset-3".format(root); name = "firmware/single-core-reset-3"; margs = "-f single-core-reset/test.mk  &> #log# && make -C {0}/src/firmware/riscv/targets/ncrisc".format(root);
+    add_pool_task(dir, name, margs)
     #   -> ttx
     for ttx in list(set([spec["ttx"] for test,spec in test_spec.items()])):
-        name = "Build ttx/{0}".format(ttx); cmd  = "cd {1}/src/hardware/tb_tensix/tests && make -j 64 OUTPUT_DIR={1}/out/pub/ttx/{3} TEST={3} generator firmware &>> {2}".format(name, root, log, ttx)
-        f.writelines("\n->> {0} \n  CMD: {1}\n".format(name, cmd));  f.flush()
-        meta.pool_results[name] = pool.apply_async(meta.exec_subprocess, (cmd,))
+        dir = "{0}/src/hardware/tb_tensix/tests".format(root); name = "ttx/{0}".format(ttx); margs = "OUTPUT_DIR={0}/out/pub/ttx/{1} TEST={1} generator firmware".format(root, ttx);
+        add_pool_task(dir, name, margs)
     f.close
     # Poll results
     status_pass = True
     timeout = int(args["timeout"]) - int(time.time()-Meta.start_time) if args["timeout"] else 14400
     pending_tasks = list(meta.pool_results.keys())
     while (timeout>0):
-        for name,p in meta.pool_results.items():
+        for name,[p,log] in meta.pool_results.items():
             if ((name in pending_tasks) and (p.ready())): 
                 ret          = p.get()["returncode"]
                 status_pass &= (0==ret)
-                logger.debug("   --> {0:100} : {1}".format(name, "PASS" if (0==ret) else "FAIL")) 
+                logger.debug("   --> {0:100} : {1}".format(name, "PASS" if (0==ret) else "FAIL ({0})".format(log))) 
                 pending_tasks.remove(name)
         if (not pending_tasks): break
         time.sleep(1)
