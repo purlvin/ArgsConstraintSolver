@@ -53,7 +53,7 @@ class Meta:
         self.stages            = {"current": "OVERALL", "stages": [{"stage": "OVERALL", "status": "FAIL", "duration": "N/A", "log": os.path.join(outdir,  "run_test.log")}]}
         self.stages["stages"] += [{"stage": stage.name, "status": "N/A", "duration": "N/A"} for stage in self.STG]
         for test,spec in sorted(test_spec.items()): 
-            self.test_stages[test]            = manager.dict({"seed": "N/A", "current": "N/A", "stages": manager.list([manager.dict({"stage": "OVERALL", "status": "PASS", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")})])}) 
+            self.test_stages[test]            = manager.dict({"seed": "N/A", "current": "N/A", "stages": manager.list([manager.dict({"stage": "OVERALL", "status": "FAIL", "suite": spec["suite"], "duration": "N/A", "log": os.path.join(rundir, test, "test.log")})])}) 
             self.test_stages[test]["stages"] += manager.list([manager.dict({"stage": stage.name, "status": "N/A", "duration": "N/A"}) for stage in self.TEST_STG])
         if (args["passrate_threshold"]): self.passrate_threshold = args["passrate_threshold"]
     def id(self):
@@ -453,6 +453,7 @@ def vsc_run(meta):
         if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else spec["seed"] if (None != spec["seed"]) else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
+        meta.test_stages[test]["stages"][0]['status'] = "PASS"
         iterable.append((test, seed, meta))
     p = pool.starmap_async(testRunInParallel, iterable)
     p.get(timeout)
