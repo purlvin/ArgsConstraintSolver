@@ -13,6 +13,7 @@ from enum import Enum
 from pprint import pprint
 from datetime import datetime
 from lib_email  import send_email
+import lib_fcov
 
 # -------------------------------
 # Path variables
@@ -562,8 +563,9 @@ def main():
       exit(0) 
     logger.info(" Found tests: " + str(sorted(test_spec.keys())))
     # STEP 0+: Update meta
-    global meta
+    global meta,fcov
     meta = Meta(test_spec, args)
+    fcov = FCov(root,  int(args["mproc"]))
 
     # STEP 1: Prebuild libraries
     if (not args["j_sim_build"]):
