@@ -57,14 +57,14 @@ class FCov:
 
     # -------------------------------
     def start_fcov_watchdog(self):
-      use_merge_watchdog = 0
+      use_merge_watchdog = 1
       if (use_merge_watchdog):
         cmd = "python3 {0} --watchdog {1} --watchdog_merge_notification_interval {2} --watchdog_stop_file {3} --watchdog_merge_procs {4} --merge_to_db {5} ".format(self.fcov_merge_tool, self.fcov_input_dir, self.watchdog_merge_notification_interval, self.watchdog_stop_file, self.watchdog_merge_procs, self.fcov_merged_xml)
         p = multiprocessing.Process(target=os.system, args=(cmd,))
         p.start()
         self.procs.append(p)
       else:
-        p = multiprocessing.Process(target=self.fcov_collection_daemon, args=(self,))
+        p = multiprocessing.Process(target=self.fcov_collection_daemon, args=())
         p.start()
         self.procs.append(p)
 
