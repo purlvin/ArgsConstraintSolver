@@ -12,8 +12,8 @@ import logging;
 from enum import Enum   
 from pprint import pprint
 from datetime import datetime
-from lib_email  import send_email
-import lib_fcov
+from lib_email import send_email
+from lib_fcov import FCov
 
 # -------------------------------
 # Path variables
@@ -434,6 +434,11 @@ def testRunInParallel(test, seed, meta):
 def vsc_run(meta):
     (test_spec, args) = (meta.test_spec, meta.args)
     meta.start_stage(meta.STG.SIM_RUN.name, "")
+    # Start FCOV watchdog
+    if (args["fcov"]): 
+        logger.info(' --> Start FCOV watchdog')
+        fcov.start_fcov_watchdog()
+    # Kick off simv
     iterable = []
     mproc   = int(args["mproc"])
     timeout = int(args["timeout"]) - int(time.time()-Meta.start_time) if args["timeout"] else 14400
@@ -500,6 +505,10 @@ def result_report(meta):
         if ret != 0: 
           logger.error("Upload to database failed! \n  CMD: {0}".format(cmd)) 
           raise Exception("Die run_test.py!")
+    # Collect and upload FCOV
+    if (args["fcov"]): 
+        logger.info(' --> Stop FCOV watchdog and upload report')
+        fcov.stop_fcov_watchdog()
 
 
 # -------------------------------
