@@ -446,6 +446,7 @@ def vsc_run(meta):
         else: 
           spec["args"] += ["+FSDB_DUMP_DISABLE=1"]
         if (args["debug"]): spec["args"] += ["+event_db=1", "+data_reg_mon_enable=1", "+tvm_verbo=high"]
+        if (args["fcov"]):  spec["args"] += ["+fcov=FCOV_", "+fcov_en=1"]
         seed = args["seed"] if (args["seed"]) else 88888888 if (args["when"] == "quick") else spec["seed"] if (None != spec["seed"]) else random.getrandbits(32)
         meta.test_stages[test]["seed"] = seed
         meta.test_stages[test]["stages"][0]['status'] = "PASS"
@@ -528,6 +529,7 @@ def main():
     ap.add_argument("-dbg", "--debug",              action="store_true", help="Simplify TTX data")
     ap.add_argument("-dp",  "--dump",               action="store_true", help="Dump FSDB waveform")
     ap.add_argument("-udb", "--upload_db",          action="store_true", help="Upload result to database")
+    ap.add_argument("-fc",  "--fcov",               action="store_true", help="Enable function coverage")
     ap.add_argument("-jsb", "--j_sim_build",        action="store_true", help="Jump to sim build")
     ap.add_argument("-jsr", "--j_sim_run",          action="store_true", help="Jump to sim run")
     global args
