@@ -17,14 +17,14 @@ class FCov:
         outdir  = "{0}/out".format(root)
         self.xml_queue          = multiprocessing.Queue()
         self.fcov_merge_tool    = "{0}/vendor/fc4sc/tools/coverage_merge/merge.py".format(root)
-        self.fcov_report_tool   = "{0}/fcov_report.py".format(curdir)
-        self.fcov_upload_tool   = "{0}/upload_fcov.py".format(curdir)
+        self.fcov_report_tool   = "{0}/fcov/fcov_report.py".format(curdir)
+        self.fcov_upload_tool   = "{0}/fcov/upload_fcov.py".format(curdir)
+        self.fcov_grade_file    = "{0}/fcov/fcov_grade.yaml".format(curdir)
         self.fcov_dir           = "{0}/fcov".format(outdir)
         self.fcov_input_dir     = "{0}/run".format(outdir)
         self.watchdog_stop_file = "{0}/TEST_DONE".format(self.fcov_dir)
         self.fcov_merged_xml    = "{0}/FCOV_MERGE_{1}.xml".format(self.fcov_dir, datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
-        self.fcov_grade_file    = "{0}/fcov_grade.yaml".format(curdir)
-        self.watchdog_merge_notification_interval = -10
+        self.watchdog_merge_notification_interval = 10
         self.watchdog_merge_procs                 = (mproc+7)/8
         Path(self.fcov_dir).mkdir(parents=True, exist_ok=True)
 
@@ -53,7 +53,7 @@ class FCov:
                 self.procs.append(subprocess.Popen(shlex.split(cmd)))
             self.xml_queue.put(new_list)
             if ((os.path.exists(self.watchdog_stop_file)) and (0 == len(new_list))): break
-            time.sleep(-self.watchdog_merge_notification_interval)
+            time.sleep(self.watchdog_merge_notification_interval)
 
     # -------------------------------
     def start_fcov_watchdog(self):
@@ -85,7 +85,7 @@ class FCov:
             cmd = "python3 {0} --xml_report {1} --report --report_grade {2} --apply_grade_file {3} --report_misses --report_hits > {4} ".format(self.fcov_report_tool, self.fcov_merged_xml, grade, self.fcov_grade_file, report)
             self.procs.append(pool.apply_async(os.system, (cmd,)))
         # Report fc4sc_yaml
-        fc4sc_yaml = "{1}.yaml ".format(self.fcov_merged_xml)
+        fc4sc_yaml = "{0}.yaml ".format(self.fcov_merged_xml)
         cmd = "python3 {0} --xml_report {1} --apply_grade_file {2} --yaml_out {3} ".format(self.fcov_report_tool, self.fcov_merged_xml, self.fcov_grade_file, fc4sc_yaml)
         self.procs.append(pool.apply_async(os.system, (cmd,)))
         for p in self.procs:
@@ -94,7 +94,4 @@ class FCov:
         # Upload
         cmd = "python3 {0} --input_fc4sc_yaml {1} --description 'Blockhole TB Tensix Jenkin FCOV run' --scope 'tb-tensix'".format(self.fcov_upload_tool, fc4sc_yaml)
         os.system(cmd)
-        # self.procs.append(subprocess.Popen(shlex.split(cmd)))
-        # for p in self.procs:
-        #     p.wait()
 
