@@ -163,7 +163,6 @@ def get_test_spec(yml, tgt_test, tgt_group):
             "args":     flatten_list(test_hash["_args"]),
         }
         groups = flatten_list(test_hash["_when"])
-        if (len([grp for grp in groups if ("NEVER" == grp.upper())])>0): continue;
         if ((tgt_test) and (tgt_test.split("__")[0] == test)):
             test_spec[tgt_test] = info
         elif (tgt_group in groups):
@@ -318,7 +317,7 @@ def testRunInParallel(test, seed, meta):
 
         # verdi_command.txt
         with open(os.path.join(test_rundir, "verdi_command.txt"), "w") as f:
-            f.write("$VERDI_HOME/bin/verdi -nologo -syntaxerrormax 100000 +systemverilogext+.sv +systemverilogext+.v +define+DUMP +define+DEBUSSY -ssy -ssv -top tb -ssf {0}/verilog.vf &".format(test_rundir))
+            f.write("$VERDI_HOME/bin/verdi -sv -L out -f {0}/vcs.f -vtop verdi_vtop.map +define+ECC_ENABLE -ssf {1}/dump_rtl_ecc.fsdb &".format(tbdir, test_rundir))
         # Stage 1 VCS run
         log = os.path.join(test_rundir, "stg1_vcs_run.log")
         meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
