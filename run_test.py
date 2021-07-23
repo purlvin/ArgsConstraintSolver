@@ -316,6 +316,9 @@ def testRunInParallel(test, seed, meta):
         test_log = os.path.join(rundir, test, "test.log")
         f_test_log = open(test_log, "w")   
 
+        # verdi_command.txt
+        with open(os.path.join(test_rundir, "verdi_command.txt"), "w") as f:
+            f.write("$VERDI_HOME/bin/verdi -nologo -syntaxerrormax 100000 +systemverilogext+.sv +systemverilogext+.v +define+DUMP +define+DEBUSSY -ssy -ssv -top tb -ssf {0}/verilog.vf &".format(test_rundir))
         # Stage 1 VCS run
         log = os.path.join(test_rundir, "stg1_vcs_run.log")
         meta.start_test_stage(test, meta.TEST_STG.VCS_RUN_1.name, log)
