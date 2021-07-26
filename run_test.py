@@ -331,12 +331,17 @@ def testRunInParallel(test, seed, meta):
         if ret != 0: raise Exception("Die run_test.py!")
         meta.update_test_status(test, "PASS")
         # Paring .cfg files
-        for x in ["genargs", "plusargs"] :
-            cfg = os.path.join(test_rundir, x + ".cfg")
-            f = open(cfg, "r")
-            cfg_args[x] = f.read().strip().split("\n")
-            cfg_hash[x] = {}
-            f.close
+        if (not meta.args["disable_randomization"]):
+            for x in ["genargs", "plusargs"] :
+                cfg = os.path.join(test_rundir, x + ".cfg")
+                f = open(cfg, "r")
+                cfg_args[x] = f.read().strip().split("\n")
+                cfg_hash[x] = {}
+                f.close
+        else:
+            for x in ["genargs", "plusargs"] :
+                cfg_args[x] = []
+                cfg_hash[x] = {}
         cfg_args["genargs"]  += genargs + ["--ttx={}".format(ttx)] 
         cfg_args["plusargs"] += spec_args + plusargs
         for k,v in cfg_args.items():
@@ -527,26 +532,27 @@ def main():
 
     # Construct the argument parser
     ap = argparse.ArgumentParser()
-    ap.add_argument("test", nargs='?',              help="Test name")
-    ap.add_argument("-w",   "--when",               help="When groups nane")
-    ap.add_argument("-s",   "--seed",               help="Seed")
-    ap.add_argument('-ga',  "--genargs",            help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
-    ap.add_argument('-pa',  "--plusargs",           help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
-    ap.add_argument("-tmo", "--timeout",            help="Set timeout in seconds, default no timeout")
-    ap.add_argument("-prt", "--passrate_threshold", type=float, help="Set tests passrate threshold")
-    ap.add_argument("-m",   "--mproc",              default=os.cpu_count()/2, help="Set maximum parallel processes, default max number of CPUs")
-    ap.add_argument("-c",   "--clean",              action="store_true", help="Remove out directories")
-    ap.add_argument("-sl",  "--show_list",          action="store_true", help="Print test list")
-    ap.add_argument("-dbg", "--debug",              action="store_true", help="Simplify TTX data")
-    ap.add_argument("-dp",  "--dump",               action="store_true", help="Dump FSDB waveform")
-    ap.add_argument("-udb", "--upload_db",          action="store_true", help="Upload result to database")
-    ap.add_argument("-fc",  "--fcov",               action="store_true", help="Enable function coverage")
-    ap.add_argument("-jsb", "--j_sim_build",        action="store_true", help="Jump to sim build")
-    ap.add_argument("-jsr", "--j_sim_run",          action="store_true", help="Jump to sim run")
+    ap.add_argument("test", nargs='?',                  help="Test name")
+    ap.add_argument("-w",   "--when",                   help="When groups nane")
+    ap.add_argument("-s",   "--seed",                   help="Seed")
+    ap.add_argument('-ga',  "--genargs",                help="TTX args example: -ga='--<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
+    ap.add_argument('-pa',  "--plusargs",               help="Sim run args example: -pa='+<ARG1>=<VALUE> --<ARG2>=<VALUE>'")
+    ap.add_argument("-tmo", "--timeout",                help="Set timeout in seconds, default no timeout")
+    ap.add_argument("-prt", "--passrate_threshold",     type=float, help="Set tests passrate threshold")
+    ap.add_argument("-m",   "--mproc",                  default=os.cpu_count()/2, help="Set maximum parallel processes, default max number of CPUs")
+    ap.add_argument("-c",   "--clean",                  action="store_true", help="Remove out directories")
+    ap.add_argument("-sl",  "--show_list",              action="store_true", help="Print test list")
+    ap.add_argument("-dr",  "--disable_randomization",  action="store_true", help="Disable gen/plus args output from randomization")
+    ap.add_argument("-dbg", "--debug",                  action="store_true", help="Simplify TTX data")
+    ap.add_argument("-dp",  "--dump",                   action="store_true", help="Dump FSDB waveform")
+    ap.add_argument("-udb", "--upload_db",              action="store_true", help="Upload result to database")
+    ap.add_argument("-fc",  "--fcov",                   action="store_true", help="Enable function coverage")
+    ap.add_argument("-jsb", "--j_sim_build",            action="store_true", help="Jump to sim build")
+    ap.add_argument("-jsr", "--j_sim_run",              action="store_true", help="Jump to sim run")
     global args
     args = vars(ap.parse_args())
     if not (args["test"] or args["when"]): args["when"] = "quick"
-    args["genargs"] = args["genargs"].split(" ") if (args["genargs"]) else []
+    args["genargs"]  = args["genargs"].split(" ")  if (args["genargs"]) else []
     args["plusargs"] = args["plusargs"].split(" ") if (args["plusargs"]) else []
     logger.debug(" <Input Args>: " + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
     for k,v in args.items():
