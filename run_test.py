@@ -326,6 +326,7 @@ def testRunInParallel(test, seed, meta):
         f_test_log.write(msg+"\n");
         cmd = "  cd {0}; {1}/simv +test={2} +ntb_random_seed={3} &> {4}".format(test_rundir, simdir_stg1, base, seed, log)
         f_test_log.write(cmd+"\n");
+        f_test_log.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
         ret |= 1 if ("Error" in open(log).read()) else 0
         if ret != 0: raise Exception("Die run_test.py!")
@@ -342,7 +343,7 @@ def testRunInParallel(test, seed, meta):
             for x in ["genargs", "plusargs"] :
                 cfg_args[x] = []
                 cfg_hash[x] = {}
-        cfg_args["genargs"]  += genargs + ["--ttx={}".format(ttx)] 
+        cfg_args["genargs"]  += ["--ttx={}".format(ttx), "--seed={}".format(seed)] + genargs
         cfg_args["plusargs"] += spec_args + plusargs
         for k,v in cfg_args.items():
             k = k.split(".")[0]
@@ -367,6 +368,7 @@ def testRunInParallel(test, seed, meta):
         f_test_log.write(msg+"\n");
         cmd = "  cd {0}; ln -sf {1}/fw/{2} fw && {1}/ttx/{3}/{3} {4} &> {0}/ttx_gen.log".format(test_rundir, pubdir, fw, ttx, cfg_args["genargs"])
         f_test_log.write(cmd+"\n");
+        f_test_log.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
         if ret != 0: raise Exception("Die run_test.py!")
         meta.update_test_status(test, "PASS")
@@ -378,6 +380,7 @@ def testRunInParallel(test, seed, meta):
         f_test_log.write(msg+"\n");
         cmd = "  cd {4}/src/test_ckernels/ckti && out/ckti --dir={0} --test={2} &> {5}".format(test_rundir, pubdir, ttx, cfg_args["genargs"], root, log)
         f_test_log.write(cmd+"\n");
+        f_test_log.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
         if ret != 0: raise Exception("Die run_test.py!")
         meta.update_test_status(test, "PASS")
@@ -403,6 +406,7 @@ def testRunInParallel(test, seed, meta):
         vcs_run_log = os.path.join(test_rundir, "vcs_run.log")
         cmd  = "  cd {0}; trap 'echo kill -9 $PID; kill -9 $PID' SIGINT SIGTERM; {1}/simv +testdef={0}/{4}.ttx +ntb_random_seed={3} +test={2} {5} &>> {6} & PID=$!; wait $PID; EXIT_STATUS=$?".format(test_rundir, simdir, base, seed, ttx, cfg_args["plusargs"], log)
         f_test_log.write(cmd+"\n")
+        f_test_log.flush()
         sys.stdout.flush()
         ret  = meta.exec_subprocess(cmd)["returncode"]
         ret |= 0 if ("<TEST-PASSED>" in open(vcs_run_log).read()) else 1
@@ -615,8 +619,16 @@ if __name__ == "__main__":
           logger.error("   Killing process: {}".format(p))
           p.terminate()
     except multiprocessing.TimeoutError:
-        sys.stdout.flush()
         logger.error('[Main] Timeout triggered')
+        for p in meta.proc: 
+          logger.error("   Killing process: {}".format(p))
+          p.terminate()
+        sys.stdout.flush()
+        for test,spec in meta.test_spec.items():
+          if (test, meta.test_stages[test]["current"] != "VCS_RUN_2"):
+             meta.test_stages[test]["stages"][0]['status'] = "FAIL"
+        results = [test_hash["stages"][0]["status"] for test,test_hash in meta.test_stages.items()]
+        meta.passrate.value = results.count("PASS")/len(results)*100
         logger.info(' STEP 4: Result report')
         result_report(meta)
     finally:

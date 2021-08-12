@@ -14,7 +14,7 @@ def construct_email_context(meta, status):
     git_branch  = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
     git_hash    = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
     #Subject
-    email_subject     = "[run_test] Tensix(:{_git_branch}) - Personal sanity - {_status}".format(_git_branch=git_branch, _status=status)
+    email_subject     = "[run_test]-[{_id}] Tensix(:{_git_branch}) - Personal sanity - {_status} ".format(_id=meta.id, _git_branch=git_branch, _status=status)
     #Html Header
     email_body_header = "<html><head><style type='text/css'>body{font-size:15px;}table,th,td{font-size:14px;border: 1px solid #cccccc;border-collapse:collapse;padding:4px 8px;font-family:Calibri;}.row{border:0px;width:800px}.key{border:0px;width:150px;text-align:right;vertical-align:text-top;padding-right:15px;}.value{border:0px;}</style><title>Sanity E-mail</title></head><body><font face='calibri'><pre>\n"
     #Body
@@ -85,4 +85,3 @@ Content-Type: text/html
 </FONT>
 '''.format(_user=user,  _subject=subject, _body=body)
     return_stat = subprocess.run(["/usr/sbin/sendmail", "-t"], input=body.encode())
-
