@@ -1,0 +1,29 @@
+# Test Suite 'conv' Tests
+#------------------------------------------------
+# -> Test templates
+templates:
+  __tensix_noc_t : &__tensix_noc_t
+    <<: *__soc_t
+    Description : "Template for soc tensix_noc tests."
+    _config     : config_tensix_noc
+    _suite      : tensix_noc
+    _args  : &__tensix_noc_t__args
+      - *__soc_t__args
+      - +yml_tensix_noc=1
+    _when  : &__tensix_noc_t__when
+      [*__soc_t__when, tensix_noc]
+
+#------------------------------------------------
+# -> Testcases
+testcases:
+  tensix_noc_mcast_test :
+    <<: *__tensix_noc_t
+    Description : |-
+      "- basic, stride of 2"
+    _clones : 3
+    _args  :
+      - *__tensix_noc_t__args
+      - +UVM_TESTNAME=tensix_noc_mcast_test_uvm_new
+    _when  :
+      [*__tensix_noc_t__when, sanity]
+  

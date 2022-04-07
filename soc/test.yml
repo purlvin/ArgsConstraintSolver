@@ -1,0 +1,34 @@
+%YAML 1.1
+---
+# Top: test.yml
+#------------------------------------------------
+# -> Global configs
+configs:
+  config_tensix_noc : &config_tensix_noc
+    _top      : black_hole_tb_top 
+    _flist    : &config_tensix_noc__flist
+      - black_hole_tb.f 
+      - black_hole.flat.f 
+    _defines  : &config_tensix_noc__defines
+      [RANDOM=0, RANDOMIZE_MEM_INIT, RANDOMIZE_REG_INIT, RANDOMIZE_GARBAGE_ASSIGN, RANDOMIZE_INVALID_ASSIGN, RTL, NOC, TSMC_TSMC7_240H_STDCELLS, TSMC_INITIALIZE_FORMAT_BINARY, SIM_CLKGATE, TSMC_TSMC7_MEMS, ARM_GF14LPP, GRAYSKULL_SOC, SVT_DATA_DEBUG_LICENSING, REDUCED_MODEL+DDR5_16G+DDR5_X8+TB_X8+SG_5600, VMM_SB_DS_IN_STDLIB+GDDR6+GDDR6_16G+DQ16+FSDB+ASSERT+FSDB+DATA_SIM+CALIB_BYPASS+FAST_SIM, UVM_CONFIG_DB_TRACE, TSMC_CM_UNIT_DELAY, TSMC_DISABLE_ASSERTION, NO_LIBCELL, SOC_SIM, USE_VERILOG_MEM_ARRAY, HAS_NONE, NO_PCIE, PCIE2_RC, PCIE1_RC, PCIE0_RC, TT_INSTRUCTION_THREAD_STUB, TT_FPU_NEW_STUB, TT_TRISC_STUB, SOC_SIM_REMOVE_FPU, RANDOM_DELAY_ENABLE, AWAVE_BUMPS_AS_LOGIC_NRZ, JTAG_SIM, PHY0_TOP=black_hole_tb_top.black_hole.pcie_ss.pcie_phy.phy0, PHY1_TOP=black_hole_tb_top.black_hole.pcie_ss.pcie_phy.phy1, PHY2_TOP=black_hole_tb_top.black_hole.pcie_ss.pcie_phy.phy2, PHY3_TOP=black_hole_tb_top.black_hole.pcie_ss.pcie_phy.phy3]
+    _args     : &config_tensix_noc__args
+      [-kdb, -j16, -debug_acc, -partcomp, -partcomp_dir=out, -fastpartcomp=j16, -pcmakeprof, g-reportstats, -sverilog, -lca, -full64, +error+200, -timescale=1ns/1fs, +lint=TFIPC-L, -error=OPD, -CFLAGS, -DVCS, -verdi_opts, -blackboxlist, bb.list, -licqueue, +notimingcheck, -debug_access, +vpi, -Xkeyopt=tbopt, -xlrm, uniq_prior_final, -Mdir=out/csrc, -P pli.tab msglog.o, -P /home/ip_home/synopsys/072618/../110221/wormhole_arc_hs48_4xsmp_mcip_fpu/build/scripts/arc_vcs_pli_table, -L/home/soc_tools/synopsys/ARC/ARChitect/lib/linux_x86_64, -larc-vcs-pli-verilog]
+
+#------------------------------------------------
+# -> Global test templates
+templates:
+  __soc_t : &__soc_t
+    _config   : config_tensix_noc
+    _fw       : arc_fw
+    _defines  : &__soc_t__defines
+      [HAS_NONE, PCIE2_RC, PCIE1_RC, PCIE0_RC, HAS_PCIE2, HAS_PCIE1, TT_INSTRUCTION_THREAD_STUB, TT_FPU_NEW_STUB, TT_TRISC_STUB, SOC_SIM_REMOVE_FPU, RANDOM_DELAY_ENABLE, AWAVE_BUMPS_AS_LOGIC_NRZ]
+    _args     : &__soc_t__args
+      [+UVM_TESTNAME=tensix_noc_mcast_test_uvm, +UVM_VERBOSITY=UVM_LOW, reportstats, +noc_id=0, +perf_test=1, +initRandMem=1, -licqueue, -error=STASKW_CO1, -assert, nopostproc]
+    _when     : &__soc_t__when
+      [quick, nightly, soc]
+
+#------------------------------------------------
+# -> Testsuite yaml
+includes:
+  - suite_tensix_noc.yml
+
