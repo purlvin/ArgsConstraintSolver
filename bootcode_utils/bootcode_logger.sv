@@ -131,7 +131,7 @@ always @ (PostCode) begin
     name = strs[0];
     line = strs[1];
     if (PostCode[31:24] >= 'hF0) begin          // 'hF1xx_xxxx, 'hF2xx_xxxx, ... , 'hFFxx_xxxx
-      if (!postcode_log_disable) $display("[%10s] %10s - BootRom 'ERROR' Postcode = 0x%08x <%0s>, failure detected, bootrom execution halt", GetTimeStr(), name, PostCode,line);
+      if (!postcode_log_disable) $display("[%10s] '%10s' BootRom 'ERROR' Postcode = 0x%08x <%0s>, failure detected, bootrom execution halt", GetTimeStr(), name, PostCode,line);
       if (~postcode_assertion_disable) begin
            A_bootrom_post_0: assert (general_assertion_disable) else
               $Fatal("bootcode_logger", $psprintf("ERROR: '%s' BootRom Postcode = %8s <%0s>,",name,$psprintf("0x%0h",PostCode),line));
@@ -139,9 +139,9 @@ always @ (PostCode) begin
     end else begin
       if (!postcode_log_disable) begin
         if (name != "<unknown>") begin
-          $display("[%10s] %10s - BootRom 'INFO' Postcode = 0x%8x <%0s>", GetTimeStr(), name, PostCode, line);
+          $display("[%10s] '%10s' BootRom 'INFO' Postcode = 0x%8x <%0s>", GetTimeStr(), name, PostCode, line);
         end else begin
-          $display("[%10s] %10s - BootRom 'WARNING' Postcode = 0x%8x <%0s>", GetTimeStr(), name, PostCode, line);
+          $display("[%10s] '%10s' BootRom 'WARNING' Postcode = 0x%8x <%0s>", GetTimeStr(), name, PostCode, line);
         end
       end
     end
@@ -163,7 +163,7 @@ always @ (PC) begin
     line = strs[1];
     if ((!pc_log_disable) && (name != "<unknown>")) begin
         //$timeformat(-6, 3, " us", 15);  // $timeformat(unit#(10**<uint#> s), prec#, "unit", minwidth)
-        $display("[%10s] %10s - BootRomPc(0x%0h): executing firmware: %0s", GetTimeStr(), name, PC, line);
+        $display("[%10s] '%10s' BootRomPc(0x%0h): executing firmware: %0s", GetTimeStr(), name, PC, line);
     end
 
   end
